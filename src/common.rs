@@ -42,7 +42,10 @@ pub fn select_splat<S: Simd, V: SimdFloat<S>>(
     if_true: V::Element,
     if_false: V::Element,
 ) -> V {
-    mask.select(V::splat(mask_token::<S, V>(mask), if_true), V::splat(mask_token::<S, V>(mask), if_false))
+    mask.select(
+        V::splat(mask_token::<S, V>(mask), if_true),
+        V::splat(mask_token::<S, V>(mask), if_false),
+    )
 }
 
 /// Recovers the SIMD token from a mask.

@@ -13,17 +13,16 @@ pub mod u10;
 pub mod u35;
 
 use fearless_simd::prelude::*;
-use fearless_simd::{ExtractToken, Simd};
+use fearless_simd::Simd;
 
 use crate::common::{F64s, I64s, M64s, U64s};
 use crate::constants::*;
 use crate::doubled::f64::{
-    add_as_doubled, add_v, mul_as_doubled, mul_v, normalize, recip_as_doubled, scale,
-    v_add_checked, DD,
+    add_v, mul_as_doubled, mul_v, normalize, recip_as_doubled, scale, v_add_checked, DD,
 };
 
-pub use constants::{splat, splat_bits, splat_int};
 use constants::REMPITABDP;
+pub use constants::{splat, splat_bits, splat_int};
 
 /// Reinterprets an `f64` vector as its bit pattern.
 #[inline(always)]
@@ -118,46 +117,41 @@ pub fn rint<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
 /// Truncate towards zero.
 #[inline(always)]
 pub fn trunc<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
-    let mut fr = x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
+    let mut fr =
+        x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
     fr -= trunci(simd, fr).to_float::<F64s<S>>();
-    (x.is_infinite() | x.abs().simd_ge(splat(simd, D1_52)))
-        .select(x, copy_sign(simd, x - fr, x))
+    (x.is_infinite() | x.abs().simd_ge(splat(simd, D1_52))).select(x, copy_sign(simd, x - fr, x))
 }
 
 /// Round towards negative infinity.
 #[inline(always)]
 pub fn floor<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
-    let mut fr = x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
+    let mut fr =
+        x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
     fr -= trunci(simd, fr).to_float::<F64s<S>>();
-    fr = fr
-        .simd_lt(splat(simd, 0.))
-        .select(fr + splat(simd, 1.), fr);
-    (x.is_infinite() | x.abs().simd_ge(splat(simd, D1_52)))
-        .select(x, copy_sign(simd, x - fr, x))
+    fr = fr.simd_lt(splat(simd, 0.)).select(fr + splat(simd, 1.), fr);
+    (x.is_infinite() | x.abs().simd_ge(splat(simd, D1_52))).select(x, copy_sign(simd, x - fr, x))
 }
 
 /// Round towards positive infinity.
 #[inline(always)]
 pub fn ceil<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
-    let mut fr = x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
+    let mut fr =
+        x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
     fr -= trunci(simd, fr).to_float::<F64s<S>>();
-    fr = fr
-        .simd_le(splat(simd, 0.))
-        .select(fr, fr - splat(simd, 1.));
-    (x.is_infinite() | x.abs().simd_ge(splat(simd, D1_52)))
-        .select(x, copy_sign(simd, x - fr, x))
+    fr = fr.simd_le(splat(simd, 0.)).select(fr, fr - splat(simd, 1.));
+    (x.is_infinite() | x.abs().simd_ge(splat(simd, D1_52))).select(x, copy_sign(simd, x - fr, x))
 }
 
 /// Round away from zero.
 #[inline(always)]
 pub fn round<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
     let mut x = d + splat(simd, 0.5);
-    let mut fr = x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
+    let mut fr =
+        x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
     fr -= trunci(simd, fr).to_float::<F64s<S>>();
     x = (x.simd_le(splat(simd, 0.)) & fr.simd_eq(splat(simd, 0.))).select(x - splat(simd, 1.), x);
-    fr = fr
-        .simd_lt(splat(simd, 0.))
-        .select(fr + splat(simd, 1.), fr);
+    fr = fr.simd_lt(splat(simd, 0.)).select(fr + splat(simd, 1.), fr);
     x = d
         .simd_eq(splat(simd, 0.499_999_999_999_999_944_49))
         .select(splat(simd, 0.), x);
@@ -201,18 +195,12 @@ pub fn select_splat<S: Simd>(simd: S, mask: M64s<S>, if_true: f64, if_false: f64
 
 /// Selects between three scalar values using two masks.
 #[inline(always)]
-pub fn select3<S: Simd>(
-    simd: S,
-    o0: M64s<S>,
-    o1: M64s<S>,
-    d0: f64,
-    d1: f64,
-    d2: f64,
-) -> F64s<S> {
+pub fn select3<S: Simd>(simd: S, o0: M64s<S>, o1: M64s<S>, d0: f64, d1: f64, d2: f64) -> F64s<S> {
     o0.select(splat(simd, d0), select_splat(simd, o1, d1, d2))
 }
 
 /// Selects between four scalar values using three masks.
+#[allow(clippy::too_many_arguments)]
 #[inline(always)]
 pub fn select4<S: Simd>(
     simd: S,
@@ -258,8 +246,7 @@ pub fn ldexp3k<S: Simd>(simd: S, d: F64s<S>, q: I64s<S>) -> F64s<S> {
 /// The exponent of `d`, without subnormal handling.
 #[inline(always)]
 pub fn ilogb2k<S: Simd>(simd: S, d: F64s<S>) -> I64s<S> {
-    bits_to_int(simd, (to_bits(simd, d) >> 52) & splat_bits(simd, 0x7ff))
-        - splat_int(simd, 0x3ff)
+    bits_to_int(simd, (to_bits(simd, d) >> 52) & splat_bits(simd, 0x7ff)) - splat_int(simd, 0x3ff)
 }
 
 /// The exponent of `d`, scaling subnormals into range first.
@@ -299,9 +286,7 @@ pub fn ilogb<S: Simd>(simd: S, d: F64s<S>) -> I64s<S> {
     e = d
         .simd_eq(splat(simd, 0.))
         .select(splat(simd, SLEEF_FP_ILOGB0 as f64), e);
-    e = d
-        .is_nan()
-        .select(splat(simd, SLEEF_FP_ILOGBNAN as f64), e);
+    e = d.is_nan().select(splat(simd, SLEEF_FP_ILOGBNAN as f64), e);
     e = d.is_infinite().select(splat(simd, f64::MAX), e);
     roundi(simd, e)
 }
@@ -456,6 +441,7 @@ pub fn from_slice_offset<S: Simd>(simd: S, table: &[f64], vi: I64s<S>) -> F64s<S
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
 pub fn poly2<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c1: f64, c0: f64) -> F64s<S> {
+    let _ = (x2, x4);
     mla(simd, x, splat(simd, c1), splat(simd, c0))
 }
 
@@ -465,7 +451,15 @@ pub fn poly2<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c1: f64, c0
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly3<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c2: f64, c1: f64, c0: f64) -> F64s<S> {
+pub fn poly3<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
     mla(simd, x2, splat(simd, c2), poly2(simd, x, x2, x4, c1, c0))
 }
 
@@ -475,9 +469,23 @@ pub fn poly3<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c2: f64, c1
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly4<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x2, mla(simd, x, splat(simd, c3), splat(simd, c2)),
-        mla(simd, x, splat(simd, c1), splat(simd, c0)))
+pub fn poly4<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    let _ = x4;
+    mla(
+        simd,
+        x2,
+        mla(simd, x, splat(simd, c3), splat(simd, c2)),
+        mla(simd, x, splat(simd, c1), splat(simd, c0)),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 5.
@@ -486,9 +494,23 @@ pub fn poly4<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c3: f64, c2
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly5<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x4, splat(simd, c4),
-        poly4(simd, x, x2, x4, c3, c2, c1, c0))
+pub fn poly5<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x4,
+        splat(simd, c4),
+        poly4(simd, x, x2, x4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 6.
@@ -497,9 +519,24 @@ pub fn poly5<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c4: f64, c3
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly6<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x4, poly2(simd, x, x2, x4, c5, c4),
-        poly4(simd, x, x2, x4, c3, c2, c1, c0))
+pub fn poly6<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x4,
+        poly2(simd, x, x2, x4, c5, c4),
+        poly4(simd, x, x2, x4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 7.
@@ -508,9 +545,25 @@ pub fn poly6<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c5: f64, c4
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly7<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x4, poly3(simd, x, x2, x4, c6, c5, c4),
-        poly4(simd, x, x2, x4, c3, c2, c1, c0))
+pub fn poly7<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x4,
+        poly3(simd, x, x2, x4, c6, c5, c4),
+        poly4(simd, x, x2, x4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 8.
@@ -519,9 +572,26 @@ pub fn poly7<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c6: f64, c5
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly8<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x4, poly4(simd, x, x2, x4, c7, c6, c5, c4),
-        poly4(simd, x, x2, x4, c3, c2, c1, c0))
+pub fn poly8<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x4,
+        poly4(simd, x, x2, x4, c7, c6, c5, c4),
+        poly4(simd, x, x2, x4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 9.
@@ -530,9 +600,28 @@ pub fn poly8<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, c7: f64, c6
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly9<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, splat(simd, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly9<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        splat(simd, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 10.
@@ -541,9 +630,29 @@ pub fn poly9<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly10<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly2(simd, x, x2, x4, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly10<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly2(simd, x, x2, x4, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 11.
@@ -552,9 +661,30 @@ pub fn poly10<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly11<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly3(simd, x, x2, x4, ca, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly11<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly3(simd, x, x2, x4, ca, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 12.
@@ -563,9 +693,31 @@ pub fn poly11<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly12<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly4(simd, x, x2, x4, cb, ca, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly12<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly4(simd, x, x2, x4, cb, ca, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 13.
@@ -574,9 +726,32 @@ pub fn poly12<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly13<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly5(simd, x, x2, x4, cc, cb, ca, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly13<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly5(simd, x, x2, x4, cc, cb, ca, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 14.
@@ -585,9 +760,33 @@ pub fn poly13<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly14<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly6(simd, x, x2, x4, cd, cc, cb, ca, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly14<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly6(simd, x, x2, x4, cd, cc, cb, ca, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 15.
@@ -596,9 +795,34 @@ pub fn poly14<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly15<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly7(simd, x, x2, x4, ce, cd, cc, cb, ca, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly15<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly7(simd, x, x2, x4, ce, cd, cc, cb, ca, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 16.
@@ -607,9 +831,35 @@ pub fn poly15<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly16<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, cf: f64, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x8, poly8(simd, x, x2, x4, cf, ce, cd, cc, cb, ca, c9, c8),
-        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly16<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    cf: f64,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x8,
+        poly8(simd, x, x2, x4, cf, ce, cd, cc, cb, ca, c9, c8),
+        poly8(simd, x, x2, x4, c7, c6, c5, c4, c3, c2, c1, c0),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 17.
@@ -618,9 +868,39 @@ pub fn poly16<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly17<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, x16: F64s<S>, d0: f64, cf: f64, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x16, splat(simd, d0),
-        poly16(simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly17<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    x16: F64s<S>,
+    d0: f64,
+    cf: f64,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x16,
+        splat(simd, d0),
+        poly16(
+            simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0,
+        ),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 18.
@@ -629,9 +909,40 @@ pub fn poly17<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly18<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, x16: F64s<S>, d1: f64, d0: f64, cf: f64, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x16, poly2(simd, x, x2, x4, d1, d0),
-        poly16(simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly18<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    x16: F64s<S>,
+    d1: f64,
+    d0: f64,
+    cf: f64,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x16,
+        poly2(simd, x, x2, x4, d1, d0),
+        poly16(
+            simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0,
+        ),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 19.
@@ -640,9 +951,41 @@ pub fn poly18<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly19<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, x16: F64s<S>, d2: f64, d1: f64, d0: f64, cf: f64, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x16, poly3(simd, x, x2, x4, d2, d1, d0),
-        poly16(simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly19<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    x16: F64s<S>,
+    d2: f64,
+    d1: f64,
+    d0: f64,
+    cf: f64,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x16,
+        poly3(simd, x, x2, x4, d2, d1, d0),
+        poly16(
+            simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0,
+        ),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 20.
@@ -651,9 +994,42 @@ pub fn poly19<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly20<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, x16: F64s<S>, d3: f64, d2: f64, d1: f64, d0: f64, cf: f64, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x16, poly4(simd, x, x2, x4, d3, d2, d1, d0),
-        poly16(simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly20<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    x16: F64s<S>,
+    d3: f64,
+    d2: f64,
+    d1: f64,
+    d0: f64,
+    cf: f64,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x16,
+        poly4(simd, x, x2, x4, d3, d2, d1, d0),
+        poly16(
+            simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0,
+        ),
+    )
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 21.
@@ -662,8 +1038,41 @@ pub fn poly20<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S
 /// shape so the nesting below stays uniform; the higher powers are unused below degree 5.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-pub fn poly21<S: Simd>(simd: S, x: F64s<S>, x2: F64s<S>, x4: F64s<S>, x8: F64s<S>, x16: F64s<S>, d4: f64, d3: f64, d2: f64, d1: f64, d0: f64, cf: f64, ce: f64, cd: f64, cc: f64, cb: f64, ca: f64, c9: f64, c8: f64, c7: f64, c6: f64, c5: f64, c4: f64, c3: f64, c2: f64, c1: f64, c0: f64) -> F64s<S> {
-    mla(simd, x16, poly5(simd, x, x2, x4, d4, d3, d2, d1, d0),
-        poly16(simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0))
+pub fn poly21<S: Simd>(
+    simd: S,
+    x: F64s<S>,
+    x2: F64s<S>,
+    x4: F64s<S>,
+    x8: F64s<S>,
+    x16: F64s<S>,
+    d4: f64,
+    d3: f64,
+    d2: f64,
+    d1: f64,
+    d0: f64,
+    cf: f64,
+    ce: f64,
+    cd: f64,
+    cc: f64,
+    cb: f64,
+    ca: f64,
+    c9: f64,
+    c8: f64,
+    c7: f64,
+    c6: f64,
+    c5: f64,
+    c4: f64,
+    c3: f64,
+    c2: f64,
+    c1: f64,
+    c0: f64,
+) -> F64s<S> {
+    mla(
+        simd,
+        x16,
+        poly5(simd, x, x2, x4, d4, d3, d2, d1, d0),
+        poly16(
+            simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0,
+        ),
+    )
 }
-

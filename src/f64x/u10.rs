@@ -95,10 +95,9 @@ pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
 
     t = DD::new(ldexp2k(simd, t.0, q), ldexp2k(simd, t.1, q));
 
-    let keep = d
-        .0
-        .simd_lt(splat(simd, -1000.))
-        .select(splat_bits(simd, 0), splat_bits(simd, u64::MAX));
+    let keep =
+        d.0.simd_lt(splat(simd, -1000.))
+            .select(splat_bits(simd, 0), splat_bits(simd, u64::MAX));
     DD::new(
         from_bits(simd, keep & to_bits(simd, t.0)),
         from_bits(simd, keep & to_bits(simd, t.1)),
@@ -110,10 +109,7 @@ pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
 /// The error bound of the returned value is `1.0 ULP`.
 #[inline(always)]
 pub fn expm1<S: Simd>(simd: S, a: F64s<S>) -> F64s<S> {
-    let d = add_v(
-        expk2(simd, DD::new(a, splat(simd, 0.))),
-        splat(simd, -1.),
-    );
+    let d = add_v(expk2(simd, DD::new(a, splat(simd, 0.))), splat(simd, -1.));
     let mut x = d.0;
     x = a
         .simd_gt(splat(simd, 709.782_712_893_383_996_732_223))

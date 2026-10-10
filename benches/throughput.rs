@@ -10,9 +10,12 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 
 const SIZES: [usize; 3] = [1 << 16, 1 << 20, 1 << 23];
 
+/// Signature of the crate's slice entry points.
+type SliceOp = fn(&[f64], &mut [MaybeUninit<f64>]) -> Result<(), elem_simd_math::LengthMismatch>;
+
 struct Ops {
     name: &'static str,
-    slice: fn(&[f64], &mut [MaybeUninit<f64>]) -> Result<(), elem_simd_math::LengthMismatch>,
+    slice: SliceOp,
     scalar: fn(f64) -> f64,
 }
 

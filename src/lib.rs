@@ -25,12 +25,17 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// The ported coefficients are written out to upstream's full decimal expansion. Shortening them
+// to the shortest round-tripping form would change the constants, and several are deliberately
+// not the nearest `f64` to a mathematical constant (they are the range-reduction splits).
+#![allow(clippy::excessive_precision)]
+#![allow(clippy::approx_constant)]
 
 pub mod common;
+pub mod constants;
 pub mod doubled;
 pub mod f32x;
 pub mod f64x;
-pub mod constants;
 pub(crate) mod tables;
 
 mod dispatch;

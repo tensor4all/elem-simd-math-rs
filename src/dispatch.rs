@@ -41,6 +41,7 @@ pub trait ElementwiseMath: Copy + 'static {
 }
 
 /// Writes `f(src[i])` into every slot of `dst`.
+#[cfg_attr(feature = "simd", allow(dead_code))]
 pub(crate) fn scalar_apply<T: Copy>(src: &[T], dst: &mut [MaybeUninit<T>], f: impl Fn(T) -> T) {
     for (slot, &value) in dst.iter_mut().zip(src.iter()) {
         slot.write(f(value));
@@ -50,7 +51,9 @@ pub(crate) fn scalar_apply<T: Copy>(src: &[T], dst: &mut [MaybeUninit<T>], f: im
 pub mod f64 {
     //! `f64` slice entry points.
 
-    use super::{scalar_apply, LengthMismatch};
+    #[cfg(not(feature = "simd"))]
+    use super::scalar_apply;
+    use super::LengthMismatch;
     use core::mem::MaybeUninit;
 
     #[cfg(feature = "simd")]

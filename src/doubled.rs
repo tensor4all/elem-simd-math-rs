@@ -26,7 +26,7 @@ macro_rules! dd_family {
     ) => {
         $(#[$meta])*
         pub mod $modname {
-            use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
+            use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 
             use fearless_simd::prelude::*;
             use fearless_simd::{ExtractToken, Simd};
@@ -228,13 +228,13 @@ macro_rules! dd_family {
             /// Adds a vector in place, without normalizing.
             #[inline(always)]
             pub fn add_assign_v<S: Simd>(d: &mut DD<S>, other: S::$vec) {
-                *d = *d + DD::new(other, S::$vec::splat(other.token(), 0.0 as $elem));
+                *d += DD::new(other, S::$vec::splat(other.token(), 0.0 as $elem));
             }
 
             /// Multiplies by a vector in place, without normalizing.
             #[inline(always)]
             pub fn mul_assign_v<S: Simd>(d: &mut DD<S>, other: S::$vec) {
-                *d = *d * DD::new(other, S::$vec::splat(other.token(), 0.0 as $elem));
+                *d *= DD::new(other, S::$vec::splat(other.token(), 0.0 as $elem));
             }
 
             impl<S: Simd> Add for DD<S> {
@@ -247,7 +247,7 @@ macro_rules! dd_family {
                 }
             }
 
-            
+
             impl<S: Simd> Neg for DD<S> {
                 type Output = Self;
                 #[inline(always)]
@@ -277,7 +277,40 @@ macro_rules! dd_family {
                 }
             }
 
-            
+
+            impl<S: Simd> Sub for DD<S> {
+                type Output = Self;
+                #[inline(always)]
+                fn sub(self, other: Self) -> Self {
+                    self + (-other)
+                }
+            }
+
+            impl<S: Simd> Div for DD<S> {
+                type Output = Self;
+                #[inline(always)]
+                fn div(self, other: Self) -> Self {
+                    let simd = self.0.token();
+                    let t = S::$vec::splat(simd, 1.0 as $elem) / other.0;
+                    let dh = split_upper::<S>(other.0);
+                    let dl = other.0 - dh;
+                    let th = split_upper::<S>(t);
+                    let tl = t - th;
+                    let nhh = split_upper::<S>(self.0);
+                    let nhl = self.0 - nhh;
+
+                    let q0 = self.0 * t;
+
+                    let u = nhh * th - q0
+                        + nhh * tl
+                        + nhl * th
+                        + nhl * tl
+                        + q0 * (S::$vec::splat(simd, 1.0 as $elem) - dh * th - dh * tl - dl * th - dl * tl);
+
+                    DD::new(q0, t * (self.1 - q0 * other.1) + u)
+                }
+            }
+
             impl<S: Simd> AddAssign for DD<S> {
                 #[inline(always)]
                 fn add_assign(&mut self, other: Self) {
@@ -285,7 +318,7 @@ macro_rules! dd_family {
                 }
             }
 
-            
+
             impl<S: Simd> MulAssign for DD<S> {
                 #[inline(always)]
                 fn mul_assign(&mut self, other: Self) {
