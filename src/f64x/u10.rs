@@ -3,23 +3,24 @@
 //! Ported from `sleef-rs` rev `3671d46` (`src/f64x/u10.rs`).
 
 use super::*;
-use crate::doubled::f64::{add_checked, mul_v, square, v_add_checked, DD};
+use crate::doubled::f64::{add_checked, square};
 
 /// Natural exponential function.
 ///
 /// The error bound of the returned value is `1.0 ULP`.
 #[inline(always)]
 pub fn exp<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
-    let mut u = rint::<S>(d * splat::<S>(simd, R_LN2));
+    let mut u = rint(simd, d * splat(simd, R_LN2));
     let q = roundi(simd, u);
 
-    let s = mla::<S>(u, splat::<S>(simd, -L2_U), d);
-    let s = mla::<S>(u, splat::<S>(simd, -L2_L), s);
+    let s = mla(simd, u, splat(simd, -L2_U), d);
+    let s = mla(simd, u, splat(simd, -L2_L), s);
 
     let s2 = s * s;
     let s4 = s2 * s2;
     let s8 = s4 * s4;
-    u = poly10::<S>(
+    u = poly10(
+        simd,
         s,
         s2,
         s4,
@@ -35,36 +36,39 @@ pub fn exp<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
         0.416_666_666_666_660_259_8_e-1,
         0.166_666_666_666_666_907_2,
     )
-    .mul_add(s, splat::<S>(simd, 0.5))
-    .mul_add(s, splat::<S>(simd, 1.0))
-    .mul_add(s, splat::<S>(simd, 1.0));
+    .mul_add(s, splat(simd, 0.5))
+    .mul_add(s, splat(simd, 1.0))
+    .mul_add(s, splat(simd, 1.0));
 
-    u = ldexp2k::<S>(u, q);
+    u = ldexp2k(simd, u, q);
 
     u = d
-        .simd_gt(splat::<S>(simd, 709.782_711_149_557_429_092_172_174_26))
-        .select(splat::<S>(simd, f64::INFINITY), u);
-    from_bits::<S>(
-        d.simd_lt(splat::<S>(simd, -1000.))
+        .simd_gt(splat(simd, 709.782_711_149_557_429_092_172_174_26))
+        .select(splat(simd, f64::INFINITY), u);
+    from_bits(
+        simd,
+        d.simd_lt(splat(simd, -1000.))
             .select(splat_bits(simd, 0), splat_bits(simd, u64::MAX))
-            & to_bits::<S>(u),
+            & to_bits(simd, u),
     )
 }
 
-/// `exp(x) - 1` as a double-double, without the final subtraction.
+/// `exp(x) - 1` without the final subtraction, as a double-double.
 #[inline(always)]
 pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
-    let u = d.0 * splat::<S>(simd, R_LN2);
-    let dq = rint::<S>(u);
+    let u = d.0 * splat(simd, R_LN2);
+    let dq = rint(simd, u);
     let q = roundi(simd, dq);
 
-    let s = add_v::<S>(add_v::<S>(d, mul_v::<S>(dq, splat::<S>(simd, -L2_U))), mul_v::<S>(dq, splat::<S>(simd, -L2_L)));
+    let dq = DD::new(dq, splat(simd, 0.));
+    let s = (d + mul_v(dq, splat(simd, -L2_U))) + mul_v(dq, splat(simd, -L2_L));
 
     let s2 = square(s);
     let s4 = square(s2);
     let s8 = s4.0 * s4.0;
 
-    let u = poly10::<S>(
+    let u = poly10(
+        simd,
         s.0,
         s2.0,
         s4.0,
@@ -81,18 +85,24 @@ pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
         0.416_666_666_666_666_990_5_e-1,
     );
 
-    let mut t = add_checked_v(splat::<S>(simd, 0.5), mul_v::<S>(s, splat::<S>(simd, 0.166_666_666_666_666_657_4)));
-    t = add_checked_v(splat::<S>(simd, 1.0), mul_v::<S>(t, s));
-    t = add_checked_v(splat::<S>(simd, 1.0), mul_v::<S>(t, s));
-    t = add_checked(t, mul_v::<S>(s4, u));
+    let mut t = v_add_checked(
+        splat(simd, 0.5),
+        mul_v(s, splat(simd, 0.166_666_666_666_666_657_4)),
+    );
+    t = v_add_checked(splat(simd, 1.0), t * s);
+    t = v_add_checked(splat(simd, 1.0), t * s);
+    t = add_checked(t, mul_v(s4, u));
 
-    t = DD::<S>::new(ldexp2k::<S>(t.0, q), ldexp2k::<S>(t.1, q));
+    t = DD::new(ldexp2k(simd, t.0, q), ldexp2k(simd, t.1, q));
 
     let keep = d
         .0
-        .simd_lt(splat::<S>(simd, -1000.))
+        .simd_lt(splat(simd, -1000.))
         .select(splat_bits(simd, 0), splat_bits(simd, u64::MAX));
-    DD::<S>::new(from_bits::<S>(keep & to_bits::<S>(t.0)), from_bits::<S>(keep & to_bits::<S>(t.1)))
+    DD::new(
+        from_bits(simd, keep & to_bits(simd, t.0)),
+        from_bits(simd, keep & to_bits(simd, t.1)),
+    )
 }
 
 /// `exp(x) - 1`.
@@ -100,13 +110,16 @@ pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
 /// The error bound of the returned value is `1.0 ULP`.
 #[inline(always)]
 pub fn expm1<S: Simd>(simd: S, a: F64s<S>) -> F64s<S> {
-    let d = add_v::<S>(expk2(simd, DD::<S>::new(a, splat::<S>(simd, 0.))), splat::<S>(simd, -1.));
+    let d = add_v(
+        expk2(simd, DD::new(a, splat(simd, 0.))),
+        splat(simd, -1.),
+    );
     let mut x = d.0;
     x = a
-        .simd_gt(splat::<S>(simd, 709.782_712_893_383_996_732_223))
-        .select(splat::<S>(simd, f64::INFINITY), x);
+        .simd_gt(splat(simd, 709.782_712_893_383_996_732_223))
+        .select(splat(simd, f64::INFINITY), x);
     x = a
-        .simd_lt(splat::<S>(simd, -36.736_800_569_677_101_399_113_302_437))
-        .select(splat::<S>(simd, -1.), x);
-    is_neg_zero::<S>(a).select(splat::<S>(simd, -0.), x)
+        .simd_lt(splat(simd, -36.736_800_569_677_101_399_113_302_437))
+        .select(splat(simd, -1.), x);
+    is_neg_zero(simd, a).select(splat(simd, -0.), x)
 }

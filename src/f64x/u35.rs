@@ -7,17 +7,18 @@ use super::*;
 /// `exp(x) - 1`, used internally where the result is scaled by a known factor.
 #[inline(always)]
 pub fn expm1k<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
-    let mut u = rint::<S>(d * splat::<S>(simd, R_LN2));
+    let mut u = rint(simd, d * splat(simd, R_LN2));
     let q = roundi(simd, u);
 
-    let s = mla::<S>(u, splat::<S>(simd, -L2_U), d);
-    let s = mla::<S>(u, splat::<S>(simd, -L2_L), s);
+    let s = mla(simd, u, splat(simd, -L2_U), d);
+    let s = mla(simd, u, splat(simd, -L2_L), s);
 
     let s2 = s * s;
     let s4 = s2 * s2;
     let s8 = s4 * s4;
 
-    u = poly10::<S>(
+    u = poly10(
+        simd,
         s,
         s2,
         s4,
@@ -34,10 +35,10 @@ pub fn expm1k<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
         0.166_666_666_666_666_851_703_837,
     );
 
-    u = mla::<S>(s2, splat::<S>(simd, 0.5), s2 * s * u) + s;
+    u = mla(simd, s2, splat(simd, 0.5), s2 * s * u) + s;
 
     q.simd_eq(splat_int(simd, 0))
-        .select(u, ldexp2k::<S>(u + splat::<S>(simd, 1.), q) - splat::<S>(simd, 1.))
+        .select(u, ldexp2k(simd, u + splat(simd, 1.), q) - splat(simd, 1.))
 }
 
 /// Hyperbolic tangent function.
@@ -45,15 +46,16 @@ pub fn expm1k<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
 /// The error bound of the returned value is `3.5 ULP`.
 #[inline(always)]
 pub fn tanh<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
-    let d = expm1k(simd, splat::<S>(simd, 2.) * x.abs());
-    let mut y = d / (splat::<S>(simd, 2.) + d);
+    let d = expm1k(simd, splat(simd, 2.) * x.abs());
+    let mut y = d / (splat(simd, 2.) + d);
 
-    y = (x.abs().simd_gt(splat::<S>(simd, 18.714_973_875)) | y.is_nan()).select(splat::<S>(simd, 1.), y);
-    y = mul_sign::<S>(y, x);
-    from_bits::<S>(
+    y = (x.abs().simd_gt(splat(simd, 18.714_973_875)) | y.is_nan()).select(splat(simd, 1.), y);
+    y = mul_sign(simd, y, x);
+    from_bits(
+        simd,
         x.is_nan()
             .select(splat_bits(simd, u64::MAX), splat_bits(simd, 0))
-            | to_bits::<S>(y),
+            | to_bits(simd, y),
     )
 }
 
@@ -62,20 +64,21 @@ pub fn tanh<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
 /// The error bound of the returned value is `3.5 ULP`.
 #[inline(always)]
 pub fn log<S: Simd>(simd: S, mut d: F64s<S>) -> F64s<S> {
-    let o = d.simd_lt(splat::<S>(simd, f64::MIN_POSITIVE));
-    d = o.select(d * splat::<S>(simd, D1_32 * D1_32), d);
-    let mut e = ilogb2k::<S>(simd, d * splat::<S>(simd, 1. / 0.75));
-    let m = ldexp3k::<S>(d, -e);
+    let o = d.simd_lt(splat(simd, f64::MIN_POSITIVE));
+    d = o.select(d * splat(simd, D1_32 * D1_32), d);
+    let mut e = ilogb2k(simd, d * splat(simd, 1. / 0.75));
+    let m = ldexp3k(simd, d, -e);
     e = o.select(e - splat_int(simd, 64), e);
 
-    let mut x = (m - splat::<S>(simd, 1.)) / (splat::<S>(simd, 1.) + m);
+    let mut x = (m - splat(simd, 1.)) / (splat(simd, 1.) + m);
     let x2 = x * x;
 
     let x4 = x2 * x2;
     let x8 = x4 * x4;
     let x3 = x * x2;
 
-    let t = poly7::<S>(
+    let t = poly7(
+        simd,
         x2,
         x4,
         x8,
@@ -88,10 +91,18 @@ pub fn log<S: Simd>(simd: S, mut d: F64s<S>) -> F64s<S> {
         0.666_666_666_666_777_874_006_3,
     );
 
-    x = mla::<S>(x, splat::<S>(simd, 2.), splat::<S>(simd, 0.693_147_180_559_945_286_226_764) * e.to_float());
-    x = mla::<S>(x3, t, x);
+    x = mla(
+        simd,
+        x,
+        splat(simd, 2.),
+        splat(simd, 0.693_147_180_559_945_286_226_764) * e.to_float::<F64s<S>>(),
+    );
+    x = mla(simd, x3, t, x);
 
-    x = d.simd_eq(splat::<S>(simd, f64::INFINITY)).select(splat::<S>(simd, f64::INFINITY), x);
-    x = (d.simd_lt(splat::<S>(simd, 0.)) | d.is_nan()).select(splat::<S>(simd, f64::NAN), x);
-    d.simd_eq(splat::<S>(simd, 0.)).select(splat::<S>(simd, f64::NEG_INFINITY), x)
+    x = d
+        .simd_eq(splat(simd, f64::INFINITY))
+        .select(splat(simd, f64::INFINITY), x);
+    x = (d.simd_lt(splat(simd, 0.)) | d.is_nan()).select(splat(simd, f64::NAN), x);
+    d.simd_eq(splat(simd, 0.))
+        .select(splat(simd, f64::NEG_INFINITY), x)
 }
