@@ -19,7 +19,7 @@ use rug::{Assign, Float};
 /// Working precision for the MPFR oracle, matching upstream.
 const PREC: u32 = 128;
 /// `sqrt(f64::MAX)`, used by the inverse-hyperbolic ranges upstream tests.
-const SQRT_DBL_MAX: f64 = 1.340_780_792_994_259_635_5e+154;
+const SQRT_DBL_MAX: f64 = 1.340_780_792_994_259_7e+154;
 
 /// Lengths used per iteration. These cover every tail remainder for 2-, 4- and 8-lane vectors,
 /// the exact lane counts, multiples of them, and an empty-ish and a long case.
@@ -105,6 +105,46 @@ type Pair =
     fn(&[f64], &mut [MaybeUninit<f64>], &mut [MaybeUninit<f64>]) -> Result<(), LengthMismatch>;
 
 #[track_caller]
+fn check_unary_lane(
+    name: &str,
+    it: usize,
+    lane: usize,
+    input: f64,
+    got: f64,
+    want: &Float,
+    ulp_max: f64,
+) {
+    if want.is_nan() && got.is_nan() {
+        return;
+    }
+    let ulp = count_ulp(got, want);
+    assert!(
+        ulp <= ulp_max,
+        "{name}: iter {it}, lane {lane}, input {input:e}, got {got}, want {want}, {ulp} ULP > {ulp_max}"
+    );
+}
+
+#[track_caller]
+fn check_pair_lane(
+    name: &str,
+    it: usize,
+    lane: usize,
+    input: f64,
+    got: f64,
+    want: &Float,
+    ulp_max: f64,
+) {
+    if want.is_nan() && got.is_nan() {
+        return;
+    }
+    let ulp = count_ulp(got, want);
+    assert!(
+        ulp <= ulp_max,
+        "{name}: iter {it}, lane {lane}, input {input:e}, got {got}, want {want}, {ulp} ULP > {ulp_max}"
+    );
+}
+
+#[track_caller]
 fn assert_close(name: &str, it: usize, lane: usize, got: f64, want: &Float, ulp_max: f64) {
     if want.is_nan() && got.is_nan() {
         return;
@@ -125,11 +165,12 @@ fn check_unary(name: &str, op: Unary, oracle: fn(Float) -> Float, lo: f64, hi: f
         op(&src, &mut out).expect("length check");
         for (lane, (got, &x)) in read(out).iter().zip(src.iter()).enumerate() {
             let want = oracle(Float::with_val(PREC, x));
-            assert_close(name, it, lane, *got, &want, ulp_max);
+            check_unary_lane(name, it, lane, x, *got, &want, ulp_max);
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_binary(
     name: &str,
     op: Binary,
@@ -173,8 +214,8 @@ fn check_pair(
         let second = read(second);
         for lane in 0..len {
             let (want_a, want_b) = oracle(Float::with_val(PREC, src[lane]));
-            assert_close(name, it, lane, first[lane], &want_a, ulp_max);
-            assert_close(name, it, lane, second[lane], &want_b, ulp_max);
+            check_pair_lane(name, it, lane, src[lane], first[lane], &want_a, ulp_max);
+            check_pair_lane(name, it, lane, src[lane], second[lane], &want_b, ulp_max);
         }
     }
 }
@@ -425,7 +466,10 @@ fn sincos_ulp() {
     check_pair(
         "sincos",
         ops::sincos,
-        |x: Float| x.sin_cos(Float::new(x.prec())),
+        |x: Float| {
+            let p = x.prec();
+            x.sin_cos(Float::new(p))
+        },
         f64::MIN,
         f64::MAX,
         1.0,

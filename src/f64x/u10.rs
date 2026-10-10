@@ -63,12 +63,13 @@ pub fn exp<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
 /// `exp(x) - 1` without the final subtraction, as a double-double.
 #[inline(always)]
 pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
-    let u = d.0 * splat(simd, R_LN2);
+    let u = (d.0 + d.1) * splat(simd, R_LN2);
     let dq = rint(simd, u);
     let q = roundi(simd, dq);
 
-    let dq = DD::new(dq, splat(simd, 0.));
-    let s = (d + mul_v(dq, splat(simd, -L2_U))) + mul_v(dq, splat(simd, -L2_L));
+    // Upstream writes `d + dq * (-L2_U) + dq * (-L2_L)`, which is
+    // `Doubled + F64x` twice, not `Doubled + Doubled`.
+    let s = add_v(add_v(d, dq * splat(simd, -L2_U)), dq * splat(simd, -L2_L));
 
     let s2 = square(s);
     let s4 = square(s2);
@@ -117,7 +118,7 @@ pub fn expk2<S: Simd>(simd: S, d: DD<S>) -> DD<S> {
 #[inline(always)]
 pub fn expm1<S: Simd>(simd: S, a: F64s<S>) -> F64s<S> {
     let d = add_v(expk2(simd, DD::new(a, splat(simd, 0.))), splat(simd, -1.));
-    let mut x = d.0;
+    let mut x = d.0 + d.1;
     x = a
         .simd_gt(splat(simd, 709.782_712_893_383_996_732_223))
         .select(splat(simd, f64::INFINITY), x);

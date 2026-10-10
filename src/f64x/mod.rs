@@ -84,22 +84,28 @@ pub fn copy_sign<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
     )
 }
 
-/// `x * y + z`.
+/// `x * y + z`, with two roundings.
+///
+/// `sleef-rs` picks between a fused and a separate-rounding `mla` at compile time, and its
+/// documented error bounds are asserted by its default build, which does not enable FMA. This
+/// port keeps two roundings so that the ported formulations are evaluated exactly as upstream
+/// validates them; the speed comes from the vector width, not from fusion. Use
+/// [`fma`] where a genuinely fused operation is wanted.
 #[inline(always)]
 pub fn mla<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    x.mul_add(y, z)
+    x * y + z
 }
 
-/// `x * y - z`.
+/// `x * y - z`, with two roundings. See [`mla`].
 #[inline(always)]
 pub fn mul_sub<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    x.mul_sub(y, z)
+    x * y - z
 }
 
-/// `z - x * y`.
+/// `z - x * y`, with two roundings. See [`mla`].
 #[inline(always)]
 pub fn neg_mul_add<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    (-x).mul_add(y, z)
+    z - x * y
 }
 
 /// Whether `x` is exactly `-0.0`.

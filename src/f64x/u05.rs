@@ -113,7 +113,7 @@ fn sinpik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
             ),
         );
 
-    x = x * select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.)));
+    x *= select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.)));
     x = select_doubled(simd, o, add_v(x, splat(simd, 1.)), x);
 
     let o = (q & splat_int(simd, 4)).simd_eq(splat_int(simd, 4));
@@ -426,7 +426,7 @@ fn cospik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
             ),
         );
 
-    x = x * select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.)));
+    x *= select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.)));
     x = select_doubled(simd, o, add_v(x, splat(simd, 1.)), x);
 
     let o = ((q + splat_int(simd, 2)) & splat_int(simd, 4)).simd_eq(splat_int(simd, 4));

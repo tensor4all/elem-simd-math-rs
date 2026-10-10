@@ -164,7 +164,11 @@ fn nextafter_ulp() {
 #[test]
 fn fma_ulp() {
     let level = Level::new();
-    dispatch!(level, simd => {
+    dispatch!(level, simd => fma_inner(simd));
+}
+
+fn fma_inner<S: Simd>(simd: S) {
+    {
         let mut rng = Rng::new(0xfeed_face_dead_beef);
         for trial in 0..trials() {
             let a = rng.lanes::<S>(f64::MIN, f64::MAX);
@@ -184,7 +188,7 @@ fn fma_ulp() {
                 close("fma", trial, lane, arr.as_ref()[lane], &want, 0.50001);
             }
         }
-    });
+    }
 }
 
 /// `frfrexp`/`expfrexp`/`ldexp`: the decomposition must round-trip exactly, and the fractional
@@ -192,7 +196,11 @@ fn fma_ulp() {
 #[test]
 fn frexp_roundtrip() {
     let level = Level::new();
-    dispatch!(level, simd => {
+    dispatch!(level, simd => frexp_inner(simd));
+}
+
+fn frexp_inner<S: Simd>(simd: S) {
+    {
         let mut rng = Rng::new(0xabcd_ef01_2345_6789);
         for trial in 0..trials() {
             let mut a = rng.lanes::<S>(f64::MIN, f64::MAX);
@@ -204,8 +212,7 @@ fn frexp_roundtrip() {
             let back = f64x::ldexp(simd, m, e);
             let marr = m.to_array();
             let barr = back.to_array();
-            for lane in 0..a.len() {
-                let x = a[lane];
+            for (lane, &x) in a.iter().enumerate() {
                 if x == 0.0 || x.is_nan() || x.is_infinite() {
                     continue;
                 }
@@ -221,33 +228,35 @@ fn frexp_roundtrip() {
                 );
             }
         }
-    });
+    }
 }
 
 /// `ilogb` matches the platform's `ilogb` on the same values.
 #[test]
 fn ilogb_matches_platform() {
     let level = Level::new();
-    dispatch!(level, simd => {
+    dispatch!(level, simd => ilogb_inner(simd));
+}
+
+fn ilogb_inner<S: Simd>(simd: S) {
+    {
         let mut rng = Rng::new(0x5555_aaaa_5555_aaaa);
         for trial in 0..trials() {
             let a = rng.lanes::<S>(f64::MIN_POSITIVE, f64::MAX);
             let v = F64s::<S>::from_slice(simd, &a);
             let arr = f64x::ilogb(simd, v).to_array();
-            for lane in 0..a.len() {
-                if a[lane] == 0.0 || a[lane].is_nan() || a[lane].is_infinite() {
+            for (lane, &x) in a.iter().enumerate() {
+                if x == 0.0 || x.is_nan() || x.is_infinite() {
                     continue;
                 }
-                let want = unsafe { libm_ilogb(a[lane]) };
                 assert_eq!(
                     arr.as_ref()[lane],
-                    want,
-                    "trial {trial}, lane {lane}, ilogb({:e})",
-                    a[lane]
+                    libm_ilogb(x),
+                    "trial {trial}, lane {lane}, ilogb({x:e})"
                 );
             }
         }
-    });
+    }
 }
 
 unsafe extern "C" {
@@ -263,7 +272,11 @@ fn libm_ilogb(x: f64) -> i64 {
 #[test]
 fn modf_and_ordering_helpers() {
     let level = Level::new();
-    dispatch!(level, simd => {
+    dispatch!(level, simd => modf_inner(simd));
+}
+
+fn modf_inner<S: Simd>(simd: S) {
+    {
         let mut rng = Rng::new(0x1111_2222_3333_4444);
         for trial in 0..trials() {
             let a = rng.lanes::<S>(-1e6, 1e6);
@@ -290,13 +303,21 @@ fn modf_and_ordering_helpers() {
                     got_int.to_bits() == x.trunc().to_bits(),
                     "trial {trial}, lane {lane}: modf({x}) integral part is {got_int}"
                 );
-                assert_eq!(got_frac + got_int, x, "trial {trial}, lane {lane}: modf does not recombine");
+                assert_eq!(
+                    got_frac + got_int,
+                    x,
+                    "trial {trial}, lane {lane}: modf does not recombine"
+                );
 
                 let want_fdim = if x > y { x - y } else { 0.0 };
-                assert_eq!(fdim.as_ref()[lane], want_fdim, "fdim({x}, {y}), lane {lane}");
+                assert_eq!(
+                    fdim.as_ref()[lane],
+                    want_fdim,
+                    "fdim({x}, {y}), lane {lane}"
+                );
                 assert_eq!(fmax.as_ref()[lane], x.max(y), "fmax({x}, {y}), lane {lane}");
                 assert_eq!(fmin.as_ref()[lane], x.min(y), "fmin({x}, {y}), lane {lane}");
             }
         }
-    });
+    }
 }

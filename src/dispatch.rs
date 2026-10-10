@@ -151,6 +151,8 @@ pub mod f64 {
     use super::LengthMismatch;
     #[cfg(not(feature = "simd"))]
     use super::{scalar_apply, scalar_apply2, scalar_apply_ff};
+    #[cfg(feature = "simd")]
+    use crate::common::F64s;
     use core::mem::MaybeUninit;
 
     #[cfg(feature = "simd")]
@@ -177,14 +179,18 @@ pub mod f64 {
         }
     }
 
-    /// Applies a unary `kernel` lane-wise over `src`, writing `dst`.
+    /// A unary kernel over native-width vectors.
     #[cfg(feature = "simd")]
-    fn run<S: Simd>(
-        simd: S,
-        kernel: fn(S, crate::common::F64s<S>) -> crate::common::F64s<S>,
-        src: &[f64],
-        dst: &mut [MaybeUninit<f64>],
-    ) {
+    type UnaryKernel<S> = fn(S, crate::common::F64s<S>) -> crate::common::F64s<S>;
+
+    /// Applies a unary `kernel` lane-wise over `src`, writing `dst`.
+    ///
+    /// The elements past the last whole vector are handled by running the same kernel over a
+    /// padded copy, so every element goes through the kernel and the documented error bound
+    /// applies to the whole result — including the short inputs where the platform's scalar
+    /// functions are measurably worse than the kernel.
+    #[cfg(feature = "simd")]
+    fn run<S: Simd>(simd: S, kernel: UnaryKernel<S>, src: &[f64], dst: &mut [MaybeUninit<f64>]) {
         let n = crate::common::F64s::<S>::LEN;
         let mut chunks = src.chunks_exact(n);
         let mut out_chunks = dst.chunks_exact_mut(n);
@@ -196,11 +202,18 @@ pub mod f64 {
                 slot.write(value);
             }
         }
-        for (slot, &value) in out_chunks
-            .into_remainder()
-            .iter_mut()
-            .zip(chunks.remainder().iter())
-        {
+        let tail = chunks.remainder();
+        let out_tail = out_chunks.into_remainder();
+        if tail.is_empty() {
+            return;
+        }
+        let mut padded = F64s::<S>::splat(simd, 0.0).to_array();
+        for (slot, &value) in padded.as_mut().iter_mut().zip(tail.iter()) {
+            *slot = value;
+        }
+        let v = F64s::<S>::load_array(simd, padded);
+        let arr = kernel(simd, v).to_array();
+        for (slot, &value) in out_tail.iter_mut().zip(arr.as_ref().iter()) {
             slot.write(value);
         }
     }
@@ -213,7 +226,6 @@ pub mod f64 {
         lhs: &[f64],
         rhs: &[f64],
         dst: &mut [MaybeUninit<f64>],
-        scalar: fn(f64, f64) -> f64,
     ) {
         let n = crate::common::F64s::<S>::LEN;
         let mut lhs_chunks = lhs.chunks_exact(n);
@@ -228,25 +240,46 @@ pub mod f64 {
                 slot.write(value);
             }
         }
-        for ((slot, &a), &b) in out_chunks
-            .into_remainder()
-            .iter_mut()
-            .zip(lhs_chunks.remainder().iter())
-            .zip(rhs_chunks.remainder().iter())
-        {
-            slot.write(scalar(a, b));
+        let (ta, tb) = (lhs_chunks.remainder(), rhs_chunks.remainder());
+        let out_tail = out_chunks.into_remainder();
+        if ta.is_empty() {
+            return;
+        }
+        let mut pa = F64s::<S>::splat(simd, 0.0).to_array();
+        let mut pb = F64s::<S>::splat(simd, 0.0).to_array();
+        for (slot, &value) in pa.as_mut().iter_mut().zip(ta.iter()) {
+            *slot = value;
+        }
+        for (slot, &value) in pb.as_mut().iter_mut().zip(tb.iter()) {
+            *slot = value;
+        }
+        let arr = kernel(
+            simd,
+            F64s::<S>::load_array(simd, pa),
+            F64s::<S>::load_array(simd, pb),
+        )
+        .to_array();
+        for (slot, &value) in out_tail.iter_mut().zip(arr.as_ref().iter()) {
+            slot.write(value);
         }
     }
 
+    /// A kernel that produces two vectors from one.
+    #[cfg(feature = "simd")]
+    type FfKernel<S> =
+        fn(S, crate::common::F64s<S>) -> (crate::common::F64s<S>, crate::common::F64s<S>);
+
     /// Applies a `kernel` returning two vectors, writing `sin` and `cos`.
+    ///
+    /// The tail is handled the same way as in [`run`]: by `scalar` when one is given, otherwise by
+    /// running the same vector kernel over a padded copy.
     #[cfg(feature = "simd")]
     fn run_ff<S: Simd>(
         simd: S,
-        kernel: fn(S, crate::common::F64s<S>) -> (crate::common::F64s<S>, crate::common::F64s<S>),
+        kernel: FfKernel<S>,
         src: &[f64],
         first: &mut [MaybeUninit<f64>],
         second: &mut [MaybeUninit<f64>],
-        scalar: fn(f64) -> (f64, f64),
     ) {
         let n = crate::common::F64s::<S>::LEN;
         let mut chunks = src.chunks_exact(n);
@@ -265,15 +298,25 @@ pub mod f64 {
                 slot.write(value);
             }
         }
-        for ((slot_a, slot_b), &value) in first_chunks
-            .into_remainder()
+        let tail = chunks.remainder();
+        let first_tail = first_chunks.into_remainder();
+        let second_tail = second_chunks.into_remainder();
+        if tail.is_empty() {
+            return;
+        }
+        let mut padded = F64s::<S>::splat(simd, 0.0).to_array();
+        for (slot, &value) in padded.as_mut().iter_mut().zip(tail.iter()) {
+            *slot = value;
+        }
+        let (a, b) = kernel(simd, F64s::<S>::load_array(simd, padded));
+        let (arr_a, arr_b) = (a.to_array(), b.to_array());
+        for ((slot_a, slot_b), (&va, &vb)) in first_tail
             .iter_mut()
-            .zip(second_chunks.into_remainder().iter_mut())
-            .zip(chunks.remainder().iter())
+            .zip(second_tail.iter_mut())
+            .zip(arr_a.as_ref().iter().zip(arr_b.as_ref().iter()))
         {
-            let (a, b) = scalar(value);
-            slot_a.write(a);
-            slot_b.write(b);
+            slot_a.write(va);
+            slot_b.write(vb);
         }
     }
 
@@ -403,7 +446,7 @@ pub mod f64 {
                     #[cfg(feature = "simd")]
                     {
                         let level = fearless_simd::Level::new();
-                        fearless_simd::dispatch!(level, simd => run_ff(simd, $kernel, src, first, second, $scalar));
+                        fearless_simd::dispatch!(level, simd => run_ff(simd, $kernel, src, first, second));
                     }
                     #[cfg(not(feature = "simd"))]
                     {
@@ -424,12 +467,39 @@ pub mod f64 {
             "Sine and cosine evaluated together, 3.5 ULP tier.";
         sincos_deterministic_u35, crate::f64x::u35::sincos_deterministic, |v: f64| (v.sin(), v.cos()),
             "Sine and cosine together, lane-order independent, 3.5 ULP tier.";
-        sincospi, crate::f64x::u05::sincospi,
-            |v: f64| ((v * core::f64::consts::PI).sin(), (v * core::f64::consts::PI).cos()),
-            "Sine and cosine of `pi * x` together; 0.506 ULP.";
-        sincospi_u35, crate::f64x::u35::sincospi,
-            |v: f64| ((v * core::f64::consts::PI).sin(), (v * core::f64::consts::PI).cos()),
-            "Sine and cosine of `pi * x` together, 3.5 ULP tier.";
+    }
+
+    /// Sine and cosine of `pi * x` together; `0.506 ULP`.
+    ///
+    /// There is no scalar implementation in the standard library that is accurate enough for
+    /// large arguments, so the tail uses the vector kernel over a padded copy.
+    #[cfg(feature = "simd")]
+    #[inline]
+    pub fn sincospi(
+        src: &[f64],
+        first: &mut [MaybeUninit<f64>],
+        second: &mut [MaybeUninit<f64>],
+    ) -> Result<(), LengthMismatch> {
+        lengths(src.len(), first.len())?;
+        lengths(src.len(), second.len())?;
+        let level = fearless_simd::Level::new();
+        fearless_simd::dispatch!(level, simd => run_ff(simd, crate::f64x::u05::sincospi, src, first, second));
+        Ok(())
+    }
+
+    /// Sine and cosine of `pi * x` together, 3.5 ULP tier.
+    #[cfg(feature = "simd")]
+    #[inline]
+    pub fn sincospi_u35(
+        src: &[f64],
+        first: &mut [MaybeUninit<f64>],
+        second: &mut [MaybeUninit<f64>],
+    ) -> Result<(), LengthMismatch> {
+        lengths(src.len(), first.len())?;
+        lengths(src.len(), second.len())?;
+        let level = fearless_simd::Level::new();
+        fearless_simd::dispatch!(level, simd => run_ff(simd, crate::f64x::u35::sincospi, src, first, second));
+        Ok(())
     }
 
     macro_rules! binary {
@@ -446,7 +516,7 @@ pub mod f64 {
                     #[cfg(feature = "simd")]
                     {
                         let level = fearless_simd::Level::new();
-                        fearless_simd::dispatch!(level, simd => run2(simd, $kernel, lhs, rhs, dst, $scalar));
+                        fearless_simd::dispatch!(level, simd => run2(simd, $kernel, lhs, rhs, dst));
                     }
                     #[cfg(not(feature = "simd"))]
                     {
@@ -473,7 +543,7 @@ pub mod f64 {
     ) -> Result<(), LengthMismatch> {
         lengths2(lhs.len(), rhs.len(), dst.len())?;
         let level = fearless_simd::Level::new();
-        fearless_simd::dispatch!(level, simd => run2(simd, crate::f64x::u05::hypot, lhs, rhs, dst, f64::hypot));
+        fearless_simd::dispatch!(level, simd => run2(simd, crate::f64x::u05::hypot, lhs, rhs, dst));
         Ok(())
     }
 
