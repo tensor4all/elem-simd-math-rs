@@ -15,8 +15,8 @@ readme = "README.md"
 fearless_simd = "1.1"
 
 [dev-dependencies]
+# MPFR oracle for the ULP tests.
 rug = { version = "1.24", default-features = false, features = ["float"] }
-criterion = "0.5"
 
 [features]
 default = ["simd"]
@@ -36,3 +36,4 @@ debug = "line-tables-only"
 
 [profile.bench]
 debug = "line-tables-only"
+debug-assertions = true

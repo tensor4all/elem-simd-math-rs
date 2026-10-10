@@ -18,7 +18,8 @@ use fearless_simd::Simd;
 use crate::common::{F64s, I64s, M64s, U64s};
 use crate::constants::*;
 use crate::doubled::f64::{
-    add_v, mul_as_doubled, mul_v, normalize, recip_as_doubled, scale, v_add_checked, DD,
+    add_as_doubled, add_v, mul_as_doubled, mul_v, normalize, recip_as_doubled, scale,
+    v_add_checked, DD,
 };
 
 use constants::REMPITABDP;
@@ -321,6 +322,13 @@ pub fn fmin<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
 pub fn fdim<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
     let ret = x - y;
     (ret.simd_lt(splat(simd, 0.)) | x.simd_eq(y)).select(splat(simd, 0.), ret)
+}
+
+/// `v + d`, matching upstream's `F64x + Doubled<F64x>`.
+#[inline(always)]
+pub fn v_add_dd<S: Simd>(_simd: S, v: F64s<S>, d: DD<S>) -> DD<S> {
+    let t = add_as_doubled::<S>(v, d.0);
+    DD::new(t.0, t.1 + d.1)
 }
 
 /// Absolute value.
@@ -1075,4 +1083,127 @@ pub fn poly21<S: Simd>(
             simd, x, x2, x4, x8, cf, ce, cd, cc, cb, ca, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0,
         ),
     )
+}
+
+/// `x` rounded to an integer towards zero, for a non-negative `x` that is already integral.
+#[inline(always)]
+fn trunc_positive<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
+    let mut fr = mla(
+        simd,
+        splat(simd, -D1_31),
+        trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>(),
+        x,
+    );
+    fr -= trunci(simd, fr).to_float::<F64s<S>>();
+    x.abs().simd_ge(splat(simd, D1_52)).select(x, x - fr)
+}
+
+/// `x` with its last mantissa bit cleared, used by `toward0`.
+#[inline(always)]
+fn toward0<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
+    let t = from_bits(
+        simd,
+        to_bits(simd, x) + int_to_bits(simd, splat_int(simd, -1)),
+    );
+    x.simd_eq(splat(simd, 0.)).select(splat(simd, 0.), t)
+}
+
+/// Floating-point remainder, truncated towards zero.
+///
+/// The error bound of the returned value is `0.5 ULP`.
+#[inline(always)]
+pub fn fmod<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
+    let n = x.abs();
+    let d = y.abs();
+    let s = splat(simd, 1.);
+    let o = d.simd_lt(splat(simd, f64::MIN_POSITIVE));
+    let n = o.select(n * splat(simd, D1_54), n);
+    let d = o.select(d * splat(simd, D1_54), d);
+    let s = o.select(s * splat(simd, 1. / D1_54), s);
+    let rd = splat(simd, 1.) / toward0(simd, d);
+    let mut r: DD<S> = DD::new(n, splat(simd, 0.));
+
+    for _ in 0..21 {
+        // ceil(log2(DBL_MAX) / 52) iterations are sufficient.
+        let r0: F64s<S> = r.0;
+        let mut q = trunc_positive(simd, toward0(simd, r0) * rd);
+        let big = (splat(simd, 3.) * d).simd_gt(r0) & r0.simd_ge(d);
+        q = big.select(splat(simd, 2.), q);
+        let mid = (d + d).simd_gt(r0) & r0.simd_ge(d);
+        q = mid.select(splat(simd, 1.), q);
+        r = normalize(r + mul_v(-mul_as_doubled(splat(simd, 1.), q), d));
+        if r.0.simd_lt(d).all_true() {
+            break;
+        }
+    }
+
+    let mut ret = r.0 * s;
+    ret = r.0.simd_eq(d).select(splat(simd, 0.), ret);
+
+    ret = mul_sign(simd, ret, x);
+
+    ret = n.simd_lt(d).select(x, ret);
+    d.simd_eq(splat(simd, 0.))
+        .select(splat(simd, f64::NAN), ret)
+}
+
+/// IEEE remainder, rounded to nearest even quotient.
+///
+/// The error bound of the returned value is `0.5 ULP`.
+#[inline(always)]
+pub fn remainder<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
+    let mut n = x.abs();
+    let mut d = y.abs();
+    let mut s = splat(simd, 1.);
+    let o = d.simd_lt(splat(simd, f64::MIN_POSITIVE * 2.));
+    n = o.select(n * splat(simd, D1_54), n);
+    d = o.select(d * splat(simd, D1_54), d);
+    s = o.select(s * splat(simd, 1. / D1_54), s);
+    let rd = splat(simd, 1.) / d;
+    let mut r: DD<S> = DD::new(n, splat(simd, 0.));
+    let mut qisodd = S::mask64s::splat(simd, false);
+
+    for _ in 0..21 {
+        // ceil(log2(DBL_MAX) / 52) iterations are sufficient.
+        let mut q = rint(simd, r.0 * rd);
+        q =
+            r.0.abs()
+                .simd_lt(d * splat(simd, 1.5))
+                .select(mul_sign(simd, splat(simd, 1.), r.0), q);
+        q = (r.0.abs().simd_lt(d * splat(simd, 0.5))
+            | (!qisodd & r.0.abs().simd_eq(d * splat(simd, 0.5))))
+        .select(splat(simd, 0.), q);
+        if q.simd_eq(splat(simd, 0.)).all_true() {
+            break;
+        }
+        q = (q * (-d))
+            .is_infinite()
+            .select(q - mul_sign(simd, splat(simd, 1.), r.0), q);
+        qisodd ^= is_odd(simd, q);
+        r = normalize(r + mul_v(mul_as_doubled(q, splat(simd, -1.)), d));
+    }
+
+    let mut ret = r.0 * s;
+    ret = mul_sign(simd, ret, x);
+    ret = y
+        .is_infinite()
+        .select(x.is_infinite().select(splat(simd, f64::NAN), x), ret);
+    d.simd_eq(splat(simd, 0.))
+        .select(splat(simd, f64::NAN), ret)
+}
+
+/// Splits `x` into its fractional and integral parts.
+///
+/// The returned pair is `(fractional, integral)`.
+#[inline(always)]
+pub fn modf<S: Simd>(simd: S, x: F64s<S>) -> (F64s<S>, F64s<S>) {
+    let mut fr =
+        x - splat(simd, D1_31) * trunci(simd, x * splat(simd, 1.0 / D1_31)).to_float::<F64s<S>>();
+    fr -= trunci(simd, fr).to_float::<F64s<S>>();
+    fr = x
+        .abs()
+        .simd_gt(splat(simd, D1_52))
+        .select(splat(simd, 0.), fr);
+
+    (copy_sign(simd, fr, x), copy_sign(simd, x - fr, x))
 }

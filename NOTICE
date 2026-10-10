@@ -1,0 +1,34 @@
+elem-simd-math
+==============
+
+This crate is a Rust port of SLEEF's vector math kernels, expressed against the
+stable-Rust SIMD abstraction of `fearless_simd` so that it builds on stable Rust
+with runtime CPU feature detection.
+
+It was translated from `burrbull/sleef-rs` revision `3671d46` (the v0.3.3
+release), which is itself a Rust port of SLEEF. The algorithms, the polynomial
+coefficients and the accuracy tiers all come from upstream; only the SIMD layer
+differs.
+
+Upstream projects:
+
+- sleef-rs: <https://github.com/burrbull/sleef-rs> (MIT OR Apache-2.0)
+  Copyright (c) 2016 Jorge Aparicio
+- SLEEF: <https://github.com/shibatch/sleef> (Boost Software License 1.0)
+  Copyright (c) 2010-2024 Naoki Shibata and contributors
+
+This crate's own expression is licensed under the terms in `LICENSE-MIT` and
+`LICENSE-APACHE`. The ported files contain material derived from SLEEF and carry
+the Boost Software License 1.0 as well, so the package SPDX expression is
+`(MIT OR Apache-2.0) AND BSL-1.0`. See `THIRD-PARTY-LICENSES` for the per-file
+breakdown and the licence texts.
+
+Accuracy
+--------
+
+Each kernel documents the error bound of its SLEEF accuracy tier: `u05` = 0.5
+ULP, `u10` = 1.0 ULP, `u15` = 1.5 ULP, `u35` = 3.5 ULP. The bounds are asserted by
+the ported upstream test suites, which compare every result against MPFR.
+
+The vector kernels always use the target-feature-independent (split) double-double
+formulation, so results do not depend on whether the build happened to enable FMA.
