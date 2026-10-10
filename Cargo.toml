@@ -1,0 +1,38 @@
+[package]
+name = "elem-simd-math"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "(MIT OR Apache-2.0) AND BSL-1.0"
+authors = ["Satoshi Terasaki", "Hiroshi Shinaoka"]
+repository = "https://github.com/tensor4all/elem-simd-math-rs"
+description = "Vectorized elementwise math kernels for f32/f64 over stable-Rust SIMD (port of SLEEF via sleef-rs, on fearless_simd)."
+keywords = ["simd", "math", "libm", "sleef"]
+categories = ["mathematics", "science"]
+readme = "README.md"
+
+[dependencies]
+fearless_simd = "1.1"
+
+[dev-dependencies]
+rug = { version = "1.24", default-features = false, features = ["float"] }
+criterion = "0.5"
+
+[features]
+default = ["simd"]
+# Enables the runtime-dispatched SIMD kernels. Without it every entry point uses
+# the scalar fallback implementation.
+simd = []
+
+[lib]
+bench = false
+
+[[bench]]
+name = "throughput"
+harness = false
+
+[profile.release]
+debug = "line-tables-only"
+
+[profile.bench]
+debug = "line-tables-only"
