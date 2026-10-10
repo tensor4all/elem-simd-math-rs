@@ -867,10 +867,7 @@ pub fn tan<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
         let dqh = trunc(simd, d * splat(simd, FRAC_2_PI / D1_24));
         let dqh = dqh * splat(simd, D1_24);
         s = add_v(
-            mul_v(
-                DD::splat(simd, M_2_PI),
-                d,
-            ),
+            mul_v(DD::splat(simd, M_2_PI), d),
             d.simd_lt(splat(simd, 0.))
                 .select(splat(simd, -0.5), splat(simd, 0.5))
                 - dqh,
@@ -958,10 +955,7 @@ pub fn tan_deterministic<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
         let mut dqh = trunc(simd, d * splat(simd, FRAC_2_PI / D1_24));
         dqh *= splat(simd, D1_24);
         let mut x = add_v(
-            mul_v(
-                DD::splat(simd, M_2_PI),
-                d,
-            ),
+            mul_v(DD::splat(simd, M_2_PI), d),
             d.simd_lt(splat(simd, 0.))
                 .select(splat(simd, -0.5), splat(simd, 0.5))
                 - dqh,

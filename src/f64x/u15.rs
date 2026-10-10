@@ -367,12 +367,14 @@ pub fn erfc<S: Simd>(simd: S, a: F64s<S>) -> F64s<S> {
         ),
     );
 
-    let mut x = mul_v(
-        select_doubled(simd, o1, d, DD::new(-a, splat(simd, 0.))),
-        a,
-    );
+    let mut x = mul_v(select_doubled(simd, o1, d, DD::new(-a, splat(simd, 0.))), a);
     x = select_doubled(simd, o1, x, x + d);
-    x = select_doubled(simd, o0, sub_checked(DD::new(splat(simd, 1.), splat(simd, 0.)), x), expk2(simd, x));
+    x = select_doubled(
+        simd,
+        o0,
+        sub_checked(DD::new(splat(simd, 1.), splat(simd, 0.)), x),
+        expk2(simd, x),
+    );
     x = select_doubled(simd, o1, x, x * u);
 
     let mut r = o3.select(x.0 + x.1, splat(simd, 0.));

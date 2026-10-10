@@ -12,8 +12,8 @@ use crate::doubled::f64::{add_v, mul_as_doubled, mul_v, recip_as_doubled, square
 fn sinpik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
     let u = d * splat(simd, 4.);
     let mut q = trunci(simd, u);
-    q = (q + (bits_to_int(simd, int_to_bits(simd, q) >> splat_bits(simd, 63))
-        ^ splat_int(simd, 1)))
+    q = (q
+        + (bits_to_int(simd, int_to_bits(simd, q) >> splat_bits(simd, 63)) ^ splat_int(simd, 1)))
         & splat_int(simd, !1);
     let o = (q & splat_int(simd, 2)).simd_eq(splat_int(simd, 2));
 
@@ -113,7 +113,7 @@ fn sinpik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
             ),
         );
 
-    x = mul_v(x, select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.))));
+    x = x * select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.)));
     x = select_doubled(simd, o, add_v(x, splat(simd, 1.)), x);
 
     let o = (q & splat_int(simd, 4)).simd_eq(splat_int(simd, 4));
@@ -143,8 +143,8 @@ fn sinpik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
 pub fn sincospi<S: Simd>(simd: S, d: F64s<S>) -> (F64s<S>, F64s<S>) {
     let u = d * splat(simd, 4.);
     let mut q = trunci(simd, u);
-    q = (q + (bits_to_int(simd, int_to_bits(simd, q) >> splat_bits(simd, 63))
-        ^ splat_int(simd, 1)))
+    q = (q
+        + (bits_to_int(simd, int_to_bits(simd, q) >> splat_bits(simd, 63)) ^ splat_int(simd, 1)))
         & splat_int(simd, !1);
     let s = u - q.to_float::<F64s<S>>();
 
@@ -326,8 +326,8 @@ pub fn sinpi<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
 fn cospik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
     let u = d * splat(simd, 4.);
     let mut q = trunci(simd, u);
-    q = (q + (bits_to_int(simd, int_to_bits(simd, q) >> splat_bits(simd, 63))
-        ^ splat_int(simd, 1)))
+    q = (q
+        + (bits_to_int(simd, int_to_bits(simd, q) >> splat_bits(simd, 63)) ^ splat_int(simd, 1)))
         & splat_int(simd, !1);
     let o = (q & splat_int(simd, 2)).simd_eq(splat_int(simd, 0));
 
@@ -426,7 +426,7 @@ fn cospik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
             ),
         );
 
-    x = mul_v(x, select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.))));
+    x = x * select_doubled(simd, o, s2, DD::new(t, splat(simd, 0.)));
     x = select_doubled(simd, o, add_v(x, splat(simd, 1.)), x);
 
     let o = ((q + splat_int(simd, 2)) & splat_int(simd, 4)).simd_eq(splat_int(simd, 4));
@@ -502,8 +502,7 @@ pub fn sqrt<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
     x *= splat(simd, 1.5) - splat(simd, 0.5) * d * x * x;
     x *= d;
 
-    let d2: DD<S> =
-        v_add_dd(simd, d, mul_as_doubled::<S>(x, x)) * recip_as_doubled::<S>(x);
+    let d2: DD<S> = v_add_dd(simd, d, mul_as_doubled::<S>(x, x)) * recip_as_doubled::<S>(x);
 
     x = (d2.0 + d2.1) * q;
 
@@ -530,7 +529,7 @@ pub fn hypot<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
     let d = o.select(d * splat(simd, D1_54), d);
 
     let t = DD::new(n, splat(simd, 0.)) / DD::new(d, splat(simd, 0.));
-    let t = mul_v(
+    let t: DD<S> = mul_v(
         crate::doubled::f64::sqrt(add_v(square(t), splat(simd, 1.))),
         max,
     );

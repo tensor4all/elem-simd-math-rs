@@ -88,12 +88,22 @@ Function-level check (upstream non-comment function bodies vs. this crate):
 | `src/f64x/u15.rs` | see below | — |
 | `src/f64x/u35.rs` | 25 | 0 |
 
-A literal-level check over the non-comment bodies finds only two systematic differences:
+Four automated checks were run against the upstream non-comment function bodies: a multiset
+comparison of every numeric literal; an order-preserving comparison of the "significant" literals
+(coefficients, not structural `0.0`/`0.5`/`1.0`); the reverse check for literals that appear here
+but not upstream; and a comparison of the control-flow shape (`if`/`else`/`for`/`while`/`break`/
+`match` counts per function). The control-flow check reports **zero** differences for `u35` and
+only the three collapsed FMA branches below for `u10`, i.e. no branch or loop was dropped. The
+literal checks find only these differences:
 
 * `u10::exp` — upstream carries an FMA coefficient set and a non-FMA set; this port keeps the
   non-FMA set (decision 4), so the ten FMA-only coefficients are absent by design.
 * `u35::sincospi` — the literal `31.0` is the `u32` logical shift width, written as `63` here
   because the integer lanes are 64-bit.
+* `u10::tan` — upstream writes `Doubled::splat(M_2_PI)`; this port now does the same (it briefly
+  inlined the two values, which the reverse check caught).
+* `u35::sqrt` — upstream delegates to `u05::sqrt`. The initial port inlined a copy of that
+  implementation; it must delegate instead, so that the tier has exactly one implementation.
 
 ## Layout
 
