@@ -67,6 +67,12 @@ pub const PI_B2: f64 = 1.224_646_799_147_353_207_2_e-16;
 /// Argument bound for the two-term reduction.
 pub const TRIGRANGEMAX2: f64 = 15.;
 
+/// `2 / pi` as a double-double.
+pub const M_2_PI: (f64, f64) = (
+    0.636_619_772_367_581_382_43,
+    -3.935_735_335_036_497_176_4_e-17,
+);
+
 /// `pi` as a double-double.
 pub const D_PI: (f64, f64) = (3.141_592_653_589_793_116, 1.224_646_799_147_353_207_2_e-16);
 /// `ln 2` as a double-double.

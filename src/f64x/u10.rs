@@ -868,13 +868,7 @@ pub fn tan<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
         let dqh = dqh * splat(simd, D1_24);
         s = add_v(
             mul_v(
-                DD::splat(
-                    simd,
-                    (
-                        0.636_619_772_367_581_382_43,
-                        -3.935_735_335_036_497_176_4_e-17,
-                    ),
-                ),
+                DD::splat(simd, M_2_PI),
                 d,
             ),
             d.simd_lt(splat(simd, 0.))
@@ -965,13 +959,7 @@ pub fn tan_deterministic<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
         dqh *= splat(simd, D1_24);
         let mut x = add_v(
             mul_v(
-                DD::splat(
-                    simd,
-                    (
-                        0.636_619_772_367_581_382_43,
-                        -3.935_735_335_036_497_176_4_e-17,
-                    ),
-                ),
+                DD::splat(simd, M_2_PI),
                 d,
             ),
             d.simd_lt(splat(simd, 0.))

@@ -9,7 +9,9 @@
 //! without a turbofish.
 
 pub mod constants;
+pub mod u05;
 pub mod u10;
+pub mod u15;
 pub mod u35;
 
 use fearless_simd::prelude::*;
