@@ -150,6 +150,32 @@ const UNARY: &[UnaryCase] = &[
         scalar: f64::sqrt,
     },
     UnaryCase {
+        name: "sin (u35)",
+        kernel: ops::sin_u35,
+        scalar: f64::sin,
+    },
+    UnaryCase {
+        name: "cos (u35)",
+        kernel: ops::cos_u35,
+        scalar: f64::cos,
+    },
+    UnaryCase {
+        name: "log (u35)",
+        kernel: ops::log_u35,
+        scalar: f64::ln,
+    },
+    UnaryCase {
+        name: "tanh (u35)",
+        kernel: ops::tanh_u35,
+        scalar: f64::tanh,
+    },
+];
+
+// `erf`, `erfc`, `tgamma`, `lgamma`, `sinpi` and `cospi` have no scalar equivalent in the
+// standard library, so they only exist with the `simd` feature.
+#[cfg(feature = "simd")]
+const UNARY_SIMD_ONLY: &[UnaryCase] = &[
+    UnaryCase {
         name: "erf",
         kernel: ops::erf,
         scalar: libm_erf,
@@ -179,27 +205,10 @@ const UNARY: &[UnaryCase] = &[
         kernel: ops::cospi,
         scalar: |v| (v * std::f64::consts::PI).cos(),
     },
-    UnaryCase {
-        name: "sin (u35)",
-        kernel: ops::sin_u35,
-        scalar: f64::sin,
-    },
-    UnaryCase {
-        name: "cos (u35)",
-        kernel: ops::cos_u35,
-        scalar: f64::cos,
-    },
-    UnaryCase {
-        name: "log (u35)",
-        kernel: ops::log_u35,
-        scalar: f64::ln,
-    },
-    UnaryCase {
-        name: "tanh (u35)",
-        kernel: ops::tanh_u35,
-        scalar: f64::tanh,
-    },
 ];
+
+#[cfg(not(feature = "simd"))]
+const UNARY_SIMD_ONLY: &[UnaryCase] = &[];
 
 const BINARY: &[BinaryCase] = &[
     BinaryCase {
@@ -219,6 +228,7 @@ const BINARY: &[BinaryCase] = &[
     },
 ];
 
+#[cfg(feature = "simd")]
 extern "C" {
     fn erf(x: f64) -> f64;
     fn erfc(x: f64) -> f64;
@@ -226,18 +236,22 @@ extern "C" {
     fn lgamma(x: f64) -> f64;
 }
 
+#[cfg(feature = "simd")]
 fn libm_erf(x: f64) -> f64 {
     // SAFETY: the C library's `erf` is a pure function of its argument.
     unsafe { erf(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_erfc(x: f64) -> f64 {
     // SAFETY: as above.
     unsafe { erfc(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_tgamma(x: f64) -> f64 {
     // SAFETY: as above.
     unsafe { tgamma(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_lgamma(x: f64) -> f64 {
     // SAFETY: as above.
     unsafe { lgamma(x) }
@@ -338,7 +352,7 @@ fn main() {
             "op", "scalar", "kernel", "speedup", "max |diff|", "rel"
         );
 
-        for case in UNARY {
+        for case in UNARY.iter().chain(UNARY_SIMD_ONLY) {
             for _ in 0..WARMUP {
                 let _ = time_kernel_unary(&src, case.kernel);
             }
@@ -350,7 +364,7 @@ fn main() {
                 .collect();
 
             let mut out = uninit(size);
-            case.kernel(&src, &mut out).expect("lengths match");
+            (case.kernel)(&src, &mut out).expect("lengths match");
             let got = read(out);
             let mut max_diff = 0.0f64;
             let mut max_rel = 0.0f64;
@@ -389,7 +403,7 @@ fn main() {
                 .collect();
 
             let mut out = uninit(size);
-            case.kernel(&src, &rhs, &mut out).expect("lengths match");
+            (case.kernel)(&src, &rhs, &mut out).expect("lengths match");
             let got = read(out);
             let mut max_diff = 0.0f64;
             let mut max_rel = 0.0f64;
