@@ -324,6 +324,12 @@ pub mod f64 {
         acosh,      crate::f64x::u10::acosh,      f64::acosh,    "Inverse hyperbolic cosine function; 1.0 ULP.";
         atanh,      crate::f64x::u10::atanh,      f64::atanh,    "Inverse hyperbolic tangent function; 1.0 ULP.";
         cbrt,       crate::f64x::u10::cbrt,       f64::cbrt,     "Cube root function; 1.0 ULP.";
+        sin_deterministic, crate::f64x::u10::sin_deterministic, f64::sin,
+            "Sine, bitwise identical across lanes and platforms; 1.0 ULP.";
+        cos_deterministic, crate::f64x::u10::cos_deterministic, f64::cos,
+            "Cosine, bitwise identical across lanes and platforms; 1.0 ULP.";
+        tan_deterministic, crate::f64x::u10::tan_deterministic, f64::tan,
+            "Tangent, bitwise identical across lanes and platforms; 1.0 ULP.";
     }
 
     macro_rules! unary_u35 {
@@ -366,6 +372,12 @@ pub mod f64 {
         exp2_u35,  crate::f64x::u35::exp2,  f64::exp2,   "Base-2 exponential, 3.5 ULP tier.";
         exp10_u35, crate::f64x::u35::exp10, |v: f64| f64::powf(10.0, v), "Base-10 exponential, 3.5 ULP tier.";
         cbrt_u35,  crate::f64x::u35::cbrt,  f64::cbrt,   "Cube root, 3.5 ULP tier.";
+        sin_deterministic_u35, crate::f64x::u35::sin_deterministic, f64::sin,
+            "Sine, lane-order independent, 3.5 ULP tier.";
+        cos_deterministic_u35, crate::f64x::u35::cos_deterministic, f64::cos,
+            "Cosine, lane-order independent, 3.5 ULP tier.";
+        tan_deterministic_u35, crate::f64x::u35::tan_deterministic, f64::tan,
+            "Tangent, lane-order independent, 3.5 ULP tier.";
     }
 
     /// Square root; `0.5001 ULP`. Equivalent to the hardware square root.
@@ -376,40 +388,48 @@ pub mod f64 {
         Ok(())
     }
 
-    /// Sine and cosine evaluated together; 1.0 ULP.
-    #[inline]
-    pub fn sincos(
-        src: &[f64],
-        sin_dst: &mut [MaybeUninit<f64>],
-        cos_dst: &mut [MaybeUninit<f64>],
-    ) -> Result<(), LengthMismatch> {
-        lengths(src.len(), sin_dst.len())?;
-        lengths(src.len(), cos_dst.len())?;
-        #[cfg(feature = "simd")]
-        {
-            let level = fearless_simd::Level::new();
-            fearless_simd::dispatch!(level, simd => run_ff(simd, crate::f64x::u10::sincos, src, sin_dst, cos_dst, |v: f64| (v.sin(), v.cos())));
-        }
-        #[cfg(not(feature = "simd"))]
-        {
-            scalar_apply_ff(src, sin_dst, cos_dst, |v: f64| (v.sin(), v.cos()));
-        }
-        Ok(())
+    macro_rules! pair {
+        ($($name:ident, $kernel:path, $scalar:expr, $doc:literal;)*) => {
+            $(
+                #[doc = $doc]
+                #[inline]
+                pub fn $name(
+                    src: &[f64],
+                    first: &mut [MaybeUninit<f64>],
+                    second: &mut [MaybeUninit<f64>],
+                ) -> Result<(), LengthMismatch> {
+                    lengths(src.len(), first.len())?;
+                    lengths(src.len(), second.len())?;
+                    #[cfg(feature = "simd")]
+                    {
+                        let level = fearless_simd::Level::new();
+                        fearless_simd::dispatch!(level, simd => run_ff(simd, $kernel, src, first, second, $scalar));
+                    }
+                    #[cfg(not(feature = "simd"))]
+                    {
+                        scalar_apply_ff(src, first, second, $scalar);
+                    }
+                    Ok(())
+                }
+            )*
+        };
     }
 
-    /// Sine and cosine of `pi * x` evaluated together; `0.506 ULP`.
-    #[cfg(feature = "simd")]
-    #[inline]
-    pub fn sincospi(
-        src: &[f64],
-        sin_dst: &mut [MaybeUninit<f64>],
-        cos_dst: &mut [MaybeUninit<f64>],
-    ) -> Result<(), LengthMismatch> {
-        lengths(src.len(), sin_dst.len())?;
-        lengths(src.len(), cos_dst.len())?;
-        let level = fearless_simd::Level::new();
-        fearless_simd::dispatch!(level, simd => run_ff(simd, crate::f64x::u05::sincospi, src, sin_dst, cos_dst, |v: f64| ((v * core::f64::consts::PI).sin(), (v * core::f64::consts::PI).cos())));
-        Ok(())
+    pair! {
+        sincos, crate::f64x::u10::sincos, |v: f64| (v.sin(), v.cos()),
+            "Sine and cosine evaluated together; 1.0 ULP.";
+        sincos_deterministic, crate::f64x::u10::sincos_deterministic, |v: f64| (v.sin(), v.cos()),
+            "Sine and cosine together, lane-order independent; 1.0 ULP.";
+        sincos_u35, crate::f64x::u35::sincos, |v: f64| (v.sin(), v.cos()),
+            "Sine and cosine evaluated together, 3.5 ULP tier.";
+        sincos_deterministic_u35, crate::f64x::u35::sincos_deterministic, |v: f64| (v.sin(), v.cos()),
+            "Sine and cosine together, lane-order independent, 3.5 ULP tier.";
+        sincospi, crate::f64x::u05::sincospi,
+            |v: f64| ((v * core::f64::consts::PI).sin(), (v * core::f64::consts::PI).cos()),
+            "Sine and cosine of `pi * x` together; 0.506 ULP.";
+        sincospi_u35, crate::f64x::u35::sincospi,
+            |v: f64| ((v * core::f64::consts::PI).sin(), (v * core::f64::consts::PI).cos()),
+            "Sine and cosine of `pi * x` together, 3.5 ULP tier.";
     }
 
     macro_rules! binary {

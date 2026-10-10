@@ -1207,3 +1207,79 @@ pub fn modf<S: Simd>(simd: S, x: F64s<S>) -> (F64s<S>, F64s<S>) {
 
     (copy_sign(simd, fr, x), copy_sign(simd, x - fr, x))
 }
+
+/// Fractional component of a floating-point number, as returned by `frexp`.
+#[inline(always)]
+pub fn frfrexp<S: Simd>(simd: S, x: F64s<S>) -> F64s<S> {
+    let x = x
+        .abs()
+        .simd_lt(splat(simd, f64::MIN_POSITIVE))
+        .select(x * splat(simd, D1_63), x);
+
+    let mut xm = to_bits(simd, x);
+    xm &= splat_bits(simd, 0x_800f_ffff_ffff_ffff);
+    xm |= splat_bits(simd, 0x_3fe0_0000_u64 << 32);
+
+    let ret = from_bits(simd, xm);
+
+    let ret = x
+        .is_infinite()
+        .select(mul_sign(simd, splat(simd, f64::INFINITY), x), ret);
+    x.simd_eq(splat(simd, 0.)).select(x, ret)
+}
+
+/// Exponent of a floating-point number, as returned by `frexp`.
+#[inline(always)]
+pub fn expfrexp<S: Simd>(simd: S, x: F64s<S>) -> I64s<S> {
+    let x = x
+        .abs()
+        .simd_lt(splat(simd, f64::MIN_POSITIVE))
+        .select(x * splat(simd, D1_63), x);
+
+    let ret = (bits_to_int(simd, to_bits(simd, x) >> 52) & splat_int(simd, 0x7ff))
+        - splat_int(simd, 0x3fe);
+
+    (x.simd_eq(splat(simd, 0.)) | x.is_nan() | x.is_infinite()).select(splat_int(simd, 0), ret)
+}
+
+/// Fused multiply-add: `x * y + z` with a single rounding.
+///
+/// The error bound of the returned value is `max(0.500_01 ULP, f64::MIN_POSITIVE)`. Upstream
+/// returns infinity with the correct sign when the magnitude of the exact result exceeds
+/// `1e+300`, and this port keeps that behaviour.
+#[inline(always)]
+pub fn fma<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
+    let mut x = x;
+    let mut y = y;
+    let mut z = z;
+    let mut h2 = x * y + z;
+    let mut q = splat(simd, 1.);
+    let c1 = splat(simd, D1_54 * D1_54);
+    let c2 = c1 * c1;
+    let o = h2.abs().simd_lt(splat(simd, 1e-300));
+    {
+        x = o.select(x * c1, x);
+        y = o.select(y * c1, y);
+        z = o.select(z * c2, z);
+        q = o.select(splat(simd, 1.) / c2, q);
+    }
+    let o = h2.abs().simd_gt(splat(simd, 1e+300));
+    {
+        x = o.select(x * (splat(simd, 1.) / c1), x);
+        y = o.select(y * (splat(simd, 1.) / c1), y);
+        z = o.select(z * (splat(simd, 1.) / c2), z);
+        q = o.select(c2, q);
+    }
+    let d: DD<S> = add_v(mul_as_doubled::<S>(x, y), z);
+    let ret = (x.simd_eq(splat(simd, 0.)) | y.simd_eq(splat(simd, 0.))).select(z, d.0 + d.1);
+    let mut o = z.is_infinite();
+    o = !x.is_infinite() & o;
+    o = !x.is_nan() & o;
+    o = !y.is_infinite() & o;
+    o = !y.is_nan() & o;
+    h2 = o.select(z, h2);
+
+    let o = h2.is_infinite() | h2.is_nan();
+
+    o.select(h2, ret * q)
+}

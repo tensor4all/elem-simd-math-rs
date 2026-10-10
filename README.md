@@ -36,8 +36,10 @@ Every kernel documents the error bound of its SLEEF accuracy tier — `u05` = 0.
 ULP, `u15` = 1.5 ULP, `u35` = 3.5 ULP. Those bounds are not estimates: the test suite ports
 upstream's MPFR oracle and asserts the same bound upstream asserts for the same function.
 
-The vector kernels always use the target-feature-independent (split) double-double formulation,
-so results do not depend on whether the build enabled FMA.
+Upstream chooses between an FMA and a non-FMA formulation at compile time. This port always uses
+the non-FMA formulation, which is the one upstream ships by default and which stays within the
+documented bound on every SIMD level, including levels without fused multiply-add. The
+double-double layer is built only from split-based formulas and uses no fused operations at all.
 
 ## Features
 

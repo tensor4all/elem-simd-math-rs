@@ -30,5 +30,5 @@ Each kernel documents the error bound of its SLEEF accuracy tier: `u05` = 0.5
 ULP, `u10` = 1.0 ULP, `u15` = 1.5 ULP, `u35` = 3.5 ULP. The bounds are asserted by
 the ported upstream test suites, which compare every result against MPFR.
 
-The vector kernels always use the target-feature-independent (split) double-double
-formulation, so results do not depend on whether the build happened to enable FMA.
+The port always uses upstream's non-FMA formulation, which stays within the documented
+bound on every SIMD level, including levels without fused multiply-add.
