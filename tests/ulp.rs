@@ -21,8 +21,9 @@ const PREC: u32 = 128;
 /// `sqrt(f64::MAX)`, used by the inverse-hyperbolic ranges upstream tests.
 const SQRT_DBL_MAX: f64 = 1.340_780_792_994_259_635_5e+154;
 
-/// Lengths used per iteration: below, at and above the 2/4/8-lane widths, plus tail remainders.
-const LENS: [usize; 7] = [1, 3, 4, 7, 17, 64, 257];
+/// Lengths used per iteration. These cover every tail remainder for 2-, 4- and 8-lane vectors,
+/// the exact lane counts, multiples of them, and an empty-ish and a long case.
+const LENS: [usize; 15] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 64, 257];
 
 fn iterations() -> usize {
     std::env::var("ELEM_SIMD_MATH_ULP_ITERS")

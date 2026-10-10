@@ -19,7 +19,7 @@ the sizes the issue reports?
 | harness | `benches/throughput.rs`, `cargo bench`, `harness = false`, release profile with `debug-assertions = true` |
 | build | `cargo bench -j 16`; default features (`simd`) |
 | thread count | 1. The kernels are serial and the harness spawns no threads; `RAYON_NUM_THREADS=1` is exported anyway so that a future parallel path is visibly pinned |
-| host | the local machine; the selected SIMD level and the lane width are printed by the harness |
+| host | AMD EPYC 7713P (Zen 3), 64 cores, Linux, no CUDA. `Level::new()` selects `Avx2`, so the `f64` vector width is 4 lanes (256-bit) and the `f32` width is 8; the harness prints the level at startup |
 | affinity | none |
 | case list | every entry point in `src/dispatch.rs`, at `n = 2^16`, `2^20` and `2^23`; `2^23` is the primary case |
 | statistic | median of 7 timed rounds per arm, after 2 warmups, reported as ns/element |
