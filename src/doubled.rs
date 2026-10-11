@@ -3,12 +3,15 @@
 //! Ported from the `doubled` crate v0.3.3 (`src/lib.rs`, `src/f64x.rs`, `src/f32x.rs`) as used by
 //! `sleef-rs` rev `3671d46`. Only the operations the ported kernels call are kept.
 //!
-//! # Target-feature independence
+//! # Fused formulation
 //!
 //! Upstream selects between an FMA-based and a split-based formulation at compile time
-//! (`cfg(target_feature = "fma")`). This port always uses the split-based formulation: it is the
-//! one upstream ships and tests for targets without FMA, it uses no fused operations, and it
-//! makes results independent of whether the build happened to enable FMA.
+//! (`cfg(target_feature = "fma")`). This port always uses the FMA-based one, evaluated with
+//! [`fearless_simd::SimdFloat::mul_add`], which is a single fused operation wherever the CPU has
+//! FMA and degrades to a separate multiply and add elsewhere. On an FMA-capable level the results
+//! are therefore identical to upstream's FMA build; on a level without FMA they are what
+//! upstream's FMA branch computes when it is compiled without `+fma`. The split-based formulation
+//! was measurably slower on the double-double-heavy kernels without being more accurate.
 //!
 //! # Shape
 //!
@@ -55,13 +58,6 @@ macro_rules! dd_family {
                 }
             }
 
-            /// Sign/exponent-preserving high part of a Veltkamp split.
-            #[inline(always)]
-            pub fn split_upper<S: Simd>(x: S::$vec) -> S::$vec {
-                let bits = x.bitcast::<S::$bits>() & S::$bits::splat(x.token(), $mask);
-                bits.bitcast()
-            }
-
             /// Re-establishes `|hi| >= |lo|` after an approximate addition.
             #[inline(always)]
             pub fn normalize<S: Simd>(d: DD<S>) -> DD<S> {
@@ -99,51 +95,30 @@ macro_rules! dd_family {
             /// Squares the represented value.
             #[inline(always)]
             pub fn square<S: Simd>(d: DD<S>) -> DD<S> {
-                let xh = split_upper::<S>(d.0);
-                let xl = d.0 - xh;
                 let r0 = d.0 * d.0;
-                DD::new(
-                    r0,
-                    xh * xh + (-r0) + (xh + xh) * xl + xl * xl + d.0 * (d.1 + d.1),
-                )
+                DD::new(r0, (d.0 + d.0).mul_add(d.1, d.0.mul_add(d.0, -r0)))
             }
 
             /// Squares and collapses to a single vector.
             #[inline(always)]
             pub fn square_as_f<S: Simd>(d: DD<S>) -> S::$vec {
-                let xh = split_upper::<S>(d.0);
-                let xl = d.0 - xh;
-                xh * d.1 + xh * d.1 + xl * xl + (xh * xl + xh * xl) + xh * xh
+                d.0.mul_add(d.0, d.0 * d.1 + d.0 * d.1)
             }
 
             /// Multiplies and collapses to a single vector.
             #[inline(always)]
             pub fn mul_as_f<S: Simd>(d: DD<S>, other: DD<S>) -> S::$vec {
-                let xh = split_upper::<S>(d.0);
-                let xl = d.0 - xh;
-                let yh = split_upper::<S>(other.0);
-                let yl = other.0 - yh;
-                d.1 * yh + xh * other.1 + xl * yl + xh * yl + xl * yh + xh * yh
+                d.0.mul_add(other.0, d.1.mul_add(other.0, d.0 * other.1))
             }
 
             /// Reciprocal of the represented value.
             #[inline(always)]
             pub fn recip<S: Simd>(d: DD<S>) -> DD<S> {
-                let simd = d.0.token();
-                let t = S::$vec::splat(simd, 1.0 as $elem) / d.0;
-                let dh = split_upper::<S>(d.0);
-                let dl = d.0 - dh;
-                let th = split_upper::<S>(t);
-                let tl = t - th;
-                let q0 = t;
+                let one = S::$vec::splat(d.0.token(), 1.0 as $elem);
+                let q0 = one / d.0;
                 DD::new(
                     q0,
-                    t * (S::$vec::splat(simd, 1.0 as $elem)
-                        - dh * th
-                        - dh * tl
-                        - dl * th
-                        - dl * tl
-                        - d.1 * t),
+                    q0 * (-d.1).mul_add(q0, (-d.0).mul_add(q0, one)),
                 )
             }
 
@@ -161,27 +136,16 @@ macro_rules! dd_family {
             /// The exact product `x * y` split into two components.
             #[inline(always)]
             pub fn mul_as_doubled<S: Simd>(x: S::$vec, y: S::$vec) -> DD<S> {
-                let xh = split_upper::<S>(x);
-                let xl = x - xh;
-                let yh = split_upper::<S>(y);
-                let yl = y - yh;
                 let r0 = x * y;
-                DD::new(r0, xh * yh + (-r0) + xl * yh + xh * yl + xl * yl)
+                DD::new(r0, x.mul_add(y, -r0))
             }
 
             /// Reciprocal of a vector as an unevaluated sum.
             #[inline(always)]
             pub fn recip_as_doubled<S: Simd>(x: S::$vec) -> DD<S> {
-                let simd = x.token();
-                let t = S::$vec::splat(simd, 1.0 as $elem) / x;
-                let dh = split_upper::<S>(x);
-                let dl = x - dh;
-                let th = split_upper::<S>(t);
-                let tl = t - th;
-                DD::new(
-                    t,
-                    t * (S::$vec::splat(simd, 1.0 as $elem) - dh * th - dh * tl - dl * th - dl * tl),
-                )
+                let one = S::$vec::splat(x.token(), 1.0 as $elem);
+                let q0 = one / x;
+                DD::new(q0, q0 * (-x).mul_add(q0, one))
             }
 
             /// The exact sum `x + y` split into two components.
@@ -210,12 +174,8 @@ macro_rules! dd_family {
             /// `d * v`, without normalizing.
             #[inline(always)]
             pub fn mul_v<S: Simd>(d: DD<S>, v: S::$vec) -> DD<S> {
-                let xh = split_upper::<S>(d.0);
-                let xl = d.0 - xh;
-                let yh = split_upper::<S>(v);
-                let yl = v - yh;
                 let r0 = d.0 * v;
-                DD::new(r0, xh * yh + (-r0) + xl * yh + xh * yl + xl * yl + d.1 * v)
+                DD::new(r0, d.1.mul_add(v, d.0.mul_add(v, -r0)))
             }
 
             /// `v + d`, matching upstream's `T + Doubled<T>`.
@@ -260,19 +220,13 @@ macro_rules! dd_family {
                 type Output = Self;
                 #[inline(always)]
                 fn mul(self, other: Self) -> Self {
-                    let xh = split_upper::<S>(self.0);
-                    let xl = self.0 - xh;
-                    let yh = split_upper::<S>(other.0);
-                    let yl = other.0 - yh;
                     let r0 = self.0 * other.0;
                     DD::new(
                         r0,
-                        xh * yh + (-r0)
-                            + xl * yh
-                            + xh * yl
-                            + xl * yl
-                            + self.0 * other.1
-                            + self.1 * other.0,
+                        self.0.mul_add(
+                            other.1,
+                            self.1.mul_add(other.0, self.0.mul_add(other.0, -r0)),
+                        ),
                     )
                 }
             }
@@ -290,24 +244,15 @@ macro_rules! dd_family {
                 type Output = Self;
                 #[inline(always)]
                 fn div(self, other: Self) -> Self {
-                    let simd = self.0.token();
-                    let t = S::$vec::splat(simd, 1.0 as $elem) / other.0;
-                    let dh = split_upper::<S>(other.0);
-                    let dl = other.0 - dh;
-                    let th = split_upper::<S>(t);
-                    let tl = t - th;
-                    let nhh = split_upper::<S>(self.0);
-                    let nhl = self.0 - nhh;
+                    let one = S::$vec::splat(self.0.token(), 1.0 as $elem);
+                    let t = one / other.0;
 
                     let q0 = self.0 * t;
+                    let u = t.mul_add(self.0, -q0);
+                    let mut q1 = (-other.1).mul_add(t, (-other.0).mul_add(t, one));
+                    q1 = q0.mul_add(q1, self.1.mul_add(t, u));
 
-                    let u = nhh * th - q0
-                        + nhh * tl
-                        + nhl * th
-                        + nhl * tl
-                        + q0 * (S::$vec::splat(simd, 1.0 as $elem) - dh * th - dh * tl - dl * th - dl * tl);
-
-                    DD::new(q0, t * (self.1 - q0 * other.1) + u)
+                    DD::new(q0, q1)
                 }
             }
 

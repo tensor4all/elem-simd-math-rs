@@ -127,6 +127,21 @@ benches/throughput.rs  paired benchmark with a correctness gate
 docs/benchmark-protocol.md  predeclared Phase C protocol
 ```
 
+## Status (2026-10-11)
+
+Phase A and Phase B are done: the crate builds, tests and lints clean on both feature sets, the
+whole `f64` surface is ported, and the kernels are **bit-for-bit identical to upstream's FMA build**
+(`sleef-rs` compiled with `-C target-feature=+fma`) over 20 000 samples per function for
+`exp`, `expm1`, `tanh`, `log`, `sin`, `exp2`, `exp10` and `cbrt`. `tests/ulp.rs` asserts upstream's
+bounds and passes for all 42 cases.
+
+Phase C has been measured (`docs/benchmark-results.md`) and the predeclared gate is **partly met**:
+at `n = 2^23`, single thread, Avx2, the issue's rows are `exp` 2.85x, `log` 2.08x, `sin` 3.27x,
+`cos` 2.95x, `tanh` 2.36x, `expm1` 1.70x, `log1p` 2.61x, but `pow` is 0.74x, and
+`tgamma`/`lgamma`/`erfc`/`acosh`/`erf` are at or below 1x against libm. `pow` is faithful to
+upstream (1.42x faster than upstream per element); the `tgamma`/`lgamma` gap is a porting defect,
+tracked in `docs/findings-tgamma.md`.
+
 ## Remaining work
 
 1. `f32x` family (Phase D, outside this goal).

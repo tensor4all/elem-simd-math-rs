@@ -84,28 +84,26 @@ pub fn copy_sign<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
     )
 }
 
-/// `x * y + z`, with two roundings.
+/// `x * y + z`, fused wherever the CPU supports it.
 ///
-/// `sleef-rs` picks between a fused and a separate-rounding `mla` at compile time, and its
-/// documented error bounds are asserted by its default build, which does not enable FMA. This
-/// port keeps two roundings so that the ported formulations are evaluated exactly as upstream
-/// validates them; the speed comes from the vector width, not from fusion. Use
-/// [`fma`] where a genuinely fused operation is wanted.
+/// `sleef-rs` selects a formulation at compile time with `cfg(target_feature = "fma")`. This port
+/// always takes the FMA formulation, which upstream also asserts the documented bounds for, and
+/// evaluates it with a fused operation on every level that has one.
 #[inline(always)]
 pub fn mla<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    x * y + z
+    x.mul_add(y, z)
 }
 
-/// `x * y - z`, with two roundings. See [`mla`].
+/// `x * y - z`, fused wherever the CPU supports it. See [`mla`].
 #[inline(always)]
 pub fn mul_sub<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    x * y - z
+    x.mul_sub(y, z)
 }
 
-/// `z - x * y`, with two roundings. See [`mla`].
+/// `z - x * y`, fused wherever the CPU supports it. See [`mla`].
 #[inline(always)]
 pub fn neg_mul_add<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    z - x * y
+    (-x).mul_add(y, z)
 }
 
 /// Whether `x` is exactly `-0.0`.
@@ -1256,38 +1254,9 @@ pub fn expfrexp<S: Simd>(simd: S, x: F64s<S>) -> I64s<S> {
 /// returns infinity with the correct sign when the magnitude of the exact result exceeds
 /// `1e+300`, and this port keeps that behaviour.
 #[inline(always)]
-pub fn fma<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
-    let mut x = x;
-    let mut y = y;
-    let mut z = z;
-    let mut h2 = x * y + z;
-    let mut q = splat(simd, 1.);
-    let c1 = splat(simd, D1_54 * D1_54);
-    let c2 = c1 * c1;
-    let o = h2.abs().simd_lt(splat(simd, 1e-300));
-    {
-        x = o.select(x * c1, x);
-        y = o.select(y * c1, y);
-        z = o.select(z * c2, z);
-        q = o.select(splat(simd, 1.) / c2, q);
-    }
-    let o = h2.abs().simd_gt(splat(simd, 1e+300));
-    {
-        x = o.select(x * (splat(simd, 1.) / c1), x);
-        y = o.select(y * (splat(simd, 1.) / c1), y);
-        z = o.select(z * (splat(simd, 1.) / c2), z);
-        q = o.select(c2, q);
-    }
-    let d: DD<S> = add_v(mul_as_doubled::<S>(x, y), z);
-    let ret = (x.simd_eq(splat(simd, 0.)) | y.simd_eq(splat(simd, 0.))).select(z, d.0 + d.1);
-    let mut o = z.is_infinite();
-    o = !x.is_infinite() & o;
-    o = !x.is_nan() & o;
-    o = !y.is_infinite() & o;
-    o = !y.is_nan() & o;
-    h2 = o.select(z, h2);
-
-    let o = h2.is_infinite() | h2.is_nan();
-
-    o.select(h2, ret * q)
+pub fn fma<S: Simd>(_simd: S, x: F64s<S>, y: F64s<S>, z: F64s<S>) -> F64s<S> {
+    // `mul_add_precise` rounds the exact product-plus-add once on every level, which is exactly
+    // what this function promises; upstream emulates it by hand only because `mul_add` is not
+    // guaranteed to be fused.
+    x.mul_add_precise(y, z)
 }
