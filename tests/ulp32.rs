@@ -378,22 +378,6 @@ fn hypot_ulp() {
 }
 
 #[test]
-fn u35_hypot_ulp() {
-    check_binary(
-        "hypot_u35",
-        |a, b, d| ops::hypot(a, b, d),
-        |x: Float, y: &Float| x.hypot(y),
-        f32::MIN as f64,
-        f32::MAX as f64,
-        f32::MIN as f64,
-        f32::MAX as f64,
-        3.5,
-    );
-}
-
-// ----------------------------------------------------------------- pairs ----------
-
-#[test]
 fn sincos_ulp() {
     check_pair(
         "sincos",

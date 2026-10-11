@@ -170,9 +170,25 @@ Phase C has been measured and recorded. The predeclared gate is **not met in ful
 #2033 row except `pow` exceeds 1.5x, and `pow` is 0.75x against libm (though 1.40x faster than
 upstream). See the measurements table above; the gate is reported as failed, not relaxed.
 
-## Remaining work
+## Phases D–G (in progress)
 
-1. `f32x` family (Phase D, outside this goal).
-2. Parallel chunking of the slice drivers inside a caller-owned pool; the drivers are serial and
-   the caller decides threading.
-3. `REMPITABSP` and the `f32` constants land with the `f32` family.
+| phase | state |
+|---|---|
+| D1 element-generic helpers shared in `common.rs` | done; f64 still bit-identical to upstream |
+| D2 `f32` constants, `REMPITABSP`, aliases, `dd_family!` for f32 | done |
+| D3 `src/f32x/mod.rs` + `constants.rs` helper layer | in progress |
+| D4 `f32x/u05`, `u10`, `u15`, `u35`, `fast` | pending |
+| D5 `f32` slice API, `f32` ULP tests, benchmark for both dtypes | `tests/ulp32.rs` and `benches/throughput.rs` written, waiting on D4 |
+| E push + PR + merge `elem-simd-math-rs` (no crates.io publish) | pending |
+| F integrate into `tenferro-cpu` for f32 and f64 | worktree `../.worktrees/tenferro-simd-math` on branch `simd-math-analytic-fast-path` prepared |
+| G report on #2033 | pending |
+
+The `f32` surface mirrors the `f64` one exactly; upstream's `src/f32x/` exports `u05`
+(`sincospi`, `sqrt`, `hypot`, `sinpi`, `cospi`), `u10` (the 1.0 ULP tier), `u15` (`erfc`), `u35`
+(the 3.5 ULP tier) and `fast` (`sin`, `cos`, `pow` at roughly 350 ULP).
+
+`tests/common/mod.rs` holds one ULP harness generic over the scalar type, so the two suites share
+it; `tests/ulp32.rs` carries the f32 case tables, whose bounds differ from f64's: `tanh` and
+`atanh` are 1.0001, `erfc` is 1.5, and the `u35` tier is 3.5.
+
+## Remaining work
