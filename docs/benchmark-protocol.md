@@ -26,6 +26,21 @@ the sizes the issue reports?
 | correctness gate | the harness reports `max abs(kernel - scalar)` and the maximum relative difference per case; a case whose relative difference exceeds the 3.5 ULP-equivalent relative error is a failure, not a speedup |
 | acceptance | at `n = 2^23` the candidate improves by at least 1.5x over the scalar arm on `exp`, `log`, `sin`, `cos`, `tanh`, `expm1`, `log1p` and `pow`, and no case is slower than the scalar arm |
 
+## Result (recorded 2026-10-11, first complete run)
+
+`docs/benchmark-results.md` holds the full output. At `n = 2^23`, single thread, Avx2 (4 `f64`
+lanes), the candidate wins on most of the surface but **the predeclared gate is not met yet**:
+`exp` 2.12x, `log` 1.42x, `sin` 2.06x, `cos` 1.78x, `tanh` 1.60x, `expm1` 1.31x, `log1p` 1.94x,
+`pow` 0.61x, and `asinh`/`acosh`/`erf`/`erfc`/`tgamma`/`lgamma`/`hypot` are at or below 1x.
+
+Diagnosis: the port currently evaluates every `mla` with two roundings and every double-double
+formula in the split (non-FMA) form, because `sleef-rs` documents its error bounds against its
+default, non-FMA build. That is where the accuracy is, but it is also where the time goes: the
+DD-heavy kernels (`pow`, `tgamma`, `lgamma`, `erfc`, `asinh`, `acosh`, `hypot`) pay several times
+more floating-point operations than upstream's FMA build does. Closing the gate needs upstream's
+FMA formulation (`cfg(target_feature = "fma")` branch) evaluated with a guaranteed single-rounding
+`mul_add`, which upstream asserts the same bounds for.
+
 ## Limitations stated up front
 
 - The reference arms of the issue (PyTorch, JAX, Julia) are **not** reproduced here: their

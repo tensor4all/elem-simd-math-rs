@@ -189,7 +189,11 @@ pub mod f64 {
     /// padded copy, so every element goes through the kernel and the documented error bound
     /// applies to the whole result — including the short inputs where the platform's scalar
     /// functions are measurably worse than the kernel.
+    // `#[inline(always)]` is required by `fearless_simd`: the code called from a `dispatch!`
+    // closure is only compiled with the selected level's target features if it is inlined into
+    // that closure.
     #[cfg(feature = "simd")]
+    #[inline(always)]
     fn run<S: Simd>(simd: S, kernel: UnaryKernel<S>, src: &[f64], dst: &mut [MaybeUninit<f64>]) {
         let n = crate::common::F64s::<S>::LEN;
         let mut chunks = src.chunks_exact(n);
@@ -220,6 +224,7 @@ pub mod f64 {
 
     /// Applies a binary `kernel` lane-wise over `lhs` and `rhs`, writing `dst`.
     #[cfg(feature = "simd")]
+    #[inline(always)]
     fn run2<S: Simd>(
         simd: S,
         kernel: fn(S, crate::common::F64s<S>, crate::common::F64s<S>) -> crate::common::F64s<S>,
@@ -274,6 +279,7 @@ pub mod f64 {
     /// The tail is handled the same way as in [`run`]: by `scalar` when one is given, otherwise by
     /// running the same vector kernel over a padded copy.
     #[cfg(feature = "simd")]
+    #[inline(always)]
     fn run_ff<S: Simd>(
         simd: S,
         kernel: FfKernel<S>,

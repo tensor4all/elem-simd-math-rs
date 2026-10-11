@@ -31,9 +31,10 @@ bench = false
 name = "throughput"
 harness = false
 
+# `cargo bench` uses the `bench` profile, which inherits from `release`. Keep it identical to
+# `release` so that the benchmark measures the same code the release build produces.
 [profile.release]
 debug = "line-tables-only"
 
 [profile.bench]
 debug = "line-tables-only"
-debug-assertions = true

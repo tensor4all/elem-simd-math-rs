@@ -273,8 +273,7 @@ fn median(mut xs: Vec<f64>) -> f64 {
     xs[xs.len() / 2]
 }
 
-fn time_scalar_unary(src: &[f64], f: fn(f64) -> f64) -> f64 {
-    let mut out = uninit(src.len());
+fn time_scalar_unary(src: &[f64], out: &mut [MaybeUninit<f64>], f: fn(f64) -> f64) -> f64 {
     let start = Instant::now();
     for (slot, &x) in out.iter_mut().zip(src.iter()) {
         slot.write(f(black_box(x)));
@@ -283,16 +282,19 @@ fn time_scalar_unary(src: &[f64], f: fn(f64) -> f64) -> f64 {
     start.elapsed().as_secs_f64()
 }
 
-fn time_kernel_unary(src: &[f64], kernel: Unary) -> f64 {
-    let mut out = uninit(src.len());
+fn time_kernel_unary(src: &[f64], out: &mut [MaybeUninit<f64>], kernel: Unary) -> f64 {
     let start = Instant::now();
-    kernel(black_box(src), &mut out).expect("lengths match");
+    kernel(black_box(src), out).expect("lengths match");
     black_box(&out[0]);
     start.elapsed().as_secs_f64()
 }
 
-fn time_scalar_binary(lhs: &[f64], rhs: &[f64], f: fn(f64, f64) -> f64) -> f64 {
-    let mut out = uninit(lhs.len());
+fn time_scalar_binary(
+    lhs: &[f64],
+    rhs: &[f64],
+    out: &mut [MaybeUninit<f64>],
+    f: fn(f64, f64) -> f64,
+) -> f64 {
     let start = Instant::now();
     for ((slot, &a), &b) in out.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
         slot.write(f(black_box(a), black_box(b)));
@@ -301,19 +303,26 @@ fn time_scalar_binary(lhs: &[f64], rhs: &[f64], f: fn(f64, f64) -> f64) -> f64 {
     start.elapsed().as_secs_f64()
 }
 
-fn time_kernel_binary(lhs: &[f64], rhs: &[f64], kernel: Binary) -> f64 {
-    let mut out = uninit(lhs.len());
+fn time_kernel_binary(
+    lhs: &[f64],
+    rhs: &[f64],
+    out: &mut [MaybeUninit<f64>],
+    kernel: Binary,
+) -> f64 {
     let start = Instant::now();
-    kernel(black_box(lhs), black_box(rhs), &mut out).expect("lengths match");
+    kernel(black_box(lhs), black_box(rhs), out).expect("lengths match");
     black_box(&out[0]);
     start.elapsed().as_secs_f64()
 }
 
-fn time_kernel_pair(src: &[f64], kernel: Pair) -> f64 {
-    let mut a = uninit(src.len());
-    let mut b = uninit(src.len());
+fn time_kernel_pair(
+    src: &[f64],
+    a: &mut [MaybeUninit<f64>],
+    b: &mut [MaybeUninit<f64>],
+    kernel: Pair,
+) -> f64 {
     let start = Instant::now();
-    kernel(black_box(src), &mut a, &mut b).expect("lengths match");
+    kernel(black_box(src), a, b).expect("lengths match");
     black_box(&a[0]);
     black_box(&b[0]);
     start.elapsed().as_secs_f64()
@@ -344,6 +353,9 @@ fn main() {
 
     for size in SIZES {
         let src = unary_input(size);
+        let mut out = uninit(size);
+        let mut pair_a = uninit(size);
+        let mut pair_b = uninit(size);
         let rhs: Vec<f64> = (0..size).map(|i| 1.0 + (i % 64) as f64 * 0.03125).collect();
 
         println!("== n = {size} ==");
@@ -354,13 +366,13 @@ fn main() {
 
         for case in UNARY.iter().chain(UNARY_SIMD_ONLY) {
             for _ in 0..WARMUP {
-                let _ = time_kernel_unary(&src, case.kernel);
+                let _ = time_kernel_unary(&src, &mut out, case.kernel);
             }
             let kernel_times: Vec<f64> = (0..ROUNDS)
-                .map(|_| time_kernel_unary(&src, case.kernel))
+                .map(|_| time_kernel_unary(&src, &mut out, case.kernel))
                 .collect();
             let scalar_times: Vec<f64> = (0..ROUNDS)
-                .map(|_| time_scalar_unary(&src, case.scalar))
+                .map(|_| time_scalar_unary(&src, &mut out, case.scalar))
                 .collect();
 
             let mut out = uninit(size);
@@ -393,13 +405,13 @@ fn main() {
 
         for case in BINARY {
             for _ in 0..WARMUP {
-                let _ = time_kernel_binary(&src, &rhs, case.kernel);
+                let _ = time_kernel_binary(&src, &rhs, &mut out, case.kernel);
             }
             let kernel_times: Vec<f64> = (0..ROUNDS)
-                .map(|_| time_kernel_binary(&src, &rhs, case.kernel))
+                .map(|_| time_kernel_binary(&src, &rhs, &mut out, case.kernel))
                 .collect();
             let scalar_times: Vec<f64> = (0..ROUNDS)
-                .map(|_| time_scalar_binary(&src, &rhs, case.scalar))
+                .map(|_| time_scalar_binary(&src, &rhs, &mut out, case.scalar))
                 .collect();
 
             let mut out = uninit(size);
@@ -431,14 +443,12 @@ fn main() {
 
         // sincos is measured separately: it produces two outputs.
         for _ in 0..WARMUP {
-            let _ = time_kernel_pair(&src, ops::sincos);
+            let _ = time_kernel_pair(&src, &mut pair_a, &mut pair_b, ops::sincos);
         }
         let pair_times: Vec<f64> = (0..ROUNDS)
-            .map(|_| time_kernel_pair(&src, ops::sincos))
+            .map(|_| time_kernel_pair(&src, &mut pair_a, &mut pair_b, ops::sincos))
             .collect();
-        let scalar_pair = |s: &[f64]| {
-            let mut a = uninit(s.len());
-            let mut b = uninit(s.len());
+        let scalar_pair = |s: &[f64], a: &mut [MaybeUninit<f64>], b: &mut [MaybeUninit<f64>]| {
             let start = Instant::now();
             for ((sa, sb), &x) in a.iter_mut().zip(b.iter_mut()).zip(s.iter()) {
                 sa.write(black_box(x.sin()));
@@ -449,9 +459,11 @@ fn main() {
             start.elapsed().as_secs_f64()
         };
         for _ in 0..WARMUP {
-            let _ = scalar_pair(&src);
+            let _ = scalar_pair(&src, &mut pair_a, &mut pair_b);
         }
-        let scalar_pair_times: Vec<f64> = (0..ROUNDS).map(|_| scalar_pair(&src)).collect();
+        let scalar_pair_times: Vec<f64> = (0..ROUNDS)
+            .map(|_| scalar_pair(&src, &mut pair_a, &mut pair_b))
+            .collect();
         let pair_s = median(pair_times) / size as f64 * 1e9;
         let scalar_pair_s = median(scalar_pair_times) / size as f64 * 1e9;
         println!(
