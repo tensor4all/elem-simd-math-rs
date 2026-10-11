@@ -2172,6 +2172,7 @@ fn sinpik<S: Simd>(simd: S, d: F64s<S>) -> DD<S> {
 }
 
 /// Gamma function core: returns the double-double pair used by [`tgamma`] and [`lgamma`].
+#[inline(always)]
 fn gammak<S: Simd>(simd: S, a: F64s<S>) -> (DD<S>, DD<S>) {
     let mut clln = DD::new(splat(simd, 1.), splat(simd, 0.));
     let mut clld = DD::new(splat(simd, 1.), splat(simd, 0.));

@@ -36,7 +36,7 @@ impl std::error::Error for LengthMismatch {}
 /// Elementwise math over contiguous slices.
 ///
 /// Implemented for `f32` and `f64`. The accuracy tier and error bound of each function are
-/// documented on the kernels in [`crate::f64x`] and [`crate::f32x`]; each method selects the most
+/// documented on the kernels in [`crate::f64x`]; each method selects the most
 /// accurate tier available for that function. The tier-specific entry points are the `*_u35`
 /// free functions in [`crate::f64`].
 pub trait ElementwiseMath: Copy + 'static {
@@ -623,19 +623,6 @@ pub mod f64 {
         lengths(src.len(), dst.len())?;
         let level = fearless_simd::Level::new();
         fearless_simd::dispatch!(level, simd => run(simd, crate::f64x::u05::cospi, src, dst));
-        Ok(())
-    }
-}
-
-pub mod f32 {
-    //! `f32` slice entry points (port in progress).
-
-    use super::LengthMismatch;
-    use core::mem::MaybeUninit;
-
-    /// Reserved for the `f32` kernels once they land.
-    #[inline]
-    pub fn _placeholder(_src: &[f32], _dst: &mut [MaybeUninit<f32>]) -> Result<(), LengthMismatch> {
         Ok(())
     }
 }

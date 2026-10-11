@@ -1,7 +1,6 @@
 # elem-simd-math
 
-Vectorized elementwise math for `f32` and `f64`, on stable Rust, with runtime CPU feature
-detection.
+Vectorized elementwise math for `f64`, on stable Rust, with runtime CPU feature detection.
 
 The kernels are a port of [SLEEF](https://sleef.org/) as expressed by
 [`sleef-rs`](https://github.com/burrbull/sleef-rs), rewritten against the stable-Rust SIMD
@@ -28,7 +27,7 @@ storage; every element is written exactly once before `Ok` is returned. A length
 reported as [`LengthMismatch`] and leaves the destination untouched.
 
 If you already own a SIMD loop, the kernels are also available directly, generic over a
-`fearless_simd::Simd` token, in `f64x` and `f32x`.
+`fearless_simd::Simd` token, in `f64x`.
 
 ## Accuracy
 
@@ -40,6 +39,12 @@ Upstream chooses between an FMA and a non-FMA formulation at compile time. This 
 the non-FMA formulation, which is the one upstream ships by default and which stays within the
 documented bound on every SIMD level, including levels without fused multiply-add. The
 double-double layer is built only from split-based formulas and uses no fused operations at all.
+
+## Scope
+
+`f64` only for now. The kernels, the shared helper layer and the double-double layer are written so
+that an `f32` family can be added alongside them without relayout: see the "Remaining work" section
+of `HANDOFF.md`.
 
 ## Features
 

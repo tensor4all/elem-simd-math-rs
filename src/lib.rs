@@ -1,4 +1,4 @@
-//! `elem-simd-math` — vectorized elementwise math for `f32` and `f64`.
+//! `elem-simd-math` — vectorized elementwise math for `f64`.
 //!
 //! This crate is a port of [SLEEF] as expressed by the [sleef-rs] crate, rewritten against the
 //! stable-Rust SIMD abstraction of [`fearless_simd`] so that it builds on stable Rust with
@@ -10,7 +10,7 @@
 //!
 //! # Layers
 //!
-//! * [`f64x`] and [`f32x`] expose the ported kernels as functions generic over a
+//! * [`f64x`] exposes the ported kernels as functions generic over a
 //!   [`fearless_simd::Simd`] token, operating on native-width vectors. Use these when you
 //!   already own the SIMD loop.
 //! * [`ElementwiseMath`] exposes slice entry points that pick the best available SIMD level at
@@ -34,7 +34,6 @@
 pub mod common;
 pub mod constants;
 pub mod doubled;
-pub mod f32x;
 pub mod f64x;
 pub(crate) mod tables;
 
@@ -45,9 +44,4 @@ pub use dispatch::{ElementwiseMath, LengthMismatch};
 /// The `f64` slice entry points are also available as free functions here.
 pub mod f64 {
     pub use crate::dispatch::f64::*;
-}
-
-/// The `f32` slice entry points are also available as free functions here.
-pub mod f32 {
-    pub use crate::dispatch::f32::*;
 }

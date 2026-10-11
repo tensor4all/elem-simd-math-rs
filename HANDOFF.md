@@ -78,32 +78,40 @@ not invertible in argument position. Therefore:
 
 ## Upstream → local coverage
 
-Function-level check (upstream non-comment function bodies vs. this crate):
+Function-level check over the upstream non-comment bodies (generated, not hand-written):
 
-| upstream file | upstream fns | not present locally |
+| upstream file | upstream functions (excl. `test_*`) | not present here by name |
 |---|---|---|
-| `src/f64x.rs` | 114 (incl. the `Sleef` trait forwarding methods) | only the forwarding trait methods and the AVX-512-only/commented-out helpers; see "Deliberate deviations" |
-| `src/f64x/u05.rs` | see below | — |
+| `src/f64x.rs` | 95 | 45 — all explained below |
+| `src/f64x/u05.rs` | 6 | 0 |
 | `src/f64x/u10.rs` | 40 | 0 |
-| `src/f64x/u15.rs` | see below | — |
+| `src/f64x/u15.rs` | 1 | 0 |
 | `src/f64x/u35.rs` | 25 | 0 |
+| `src/common.rs` | trait-only | n/a — see below |
+| `doubled` v0.3.3 | `src/lib.rs`, `src/f64x.rs` | 0 |
 
-Four automated checks were run against the upstream non-comment function bodies: a multiset
-comparison of every numeric literal; an order-preserving comparison of the "significant" literals
-(coefficients, not structural `0.0`/`0.5`/`1.0`); the reverse check for literals that appear here
-but not upstream; and a comparison of the control-flow shape (`if`/`else`/`for`/`while`/`break`/
-`match` counts per function). The control-flow check reports **zero** differences for `u35` and
-only the three collapsed FMA branches below for `u10`, i.e. no branch or loop was dropped. The
-literal checks find only these differences:
+The 45 names from `src/f64x.rs` that are not present by name are:
 
-* `u10::exp` — upstream carries an FMA coefficient set and a non-FMA set; this port keeps the
-  non-FMA set (decision 4), so the ten FMA-only coefficients are absent by design.
-* `u35::sincospi` — the literal `31.0` is the `u32` logical shift width, written as `63` here
-  because the integer lanes are 64-bit.
-* `u10::tan` — upstream writes `Doubled::splat(M_2_PI)`; this port now does the same (it briefly
-  inlined the two values, which the reverse check caught).
-* `u35::sqrt` — upstream delegates to `u05::sqrt`. The initial port inlined a copy of that
-  implementation; it must delegate instead, so that the tier has exactly one implementation.
+* the `impl Sleef for F64x` forwarding methods — `sin`, `cos`, `sin_cos`, `tan`, `asin`, `acos`,
+  `atan`, `atan2`, `ln`, `cbrt`, `exp`, `pow`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`,
+  `exp2`, `exp10`, `exp_m1`, `log10`, `log2`, `log_1p`, `sqrt`, `abs`, `max`, `min`, `truncate`,
+  `next_after`, `sin_cos_pi`, `sin_pi`, `cos_pi`, `hypot`, `gamma`, `lgamma`, `erf`, `erfc`. Each
+  forwards to a tier function that is ported here (`f64x::u10::sin`, …); `abs`, `max`, `min` and
+  `copysign` are one-liners over operations `fearless_simd` already exposes.
+* helpers that were folded into the 64-bit-lane versions rather than kept as separate names:
+  `cast_into_upper` and `cast_from_upper` (inside `pow2i`/`ldexp3k`/`ilogb2k`), `c2v` (inside every
+  `polyN`), `rintk2` (identical to `rint`), `visinf2_vd_vd_vd` → `visinf2`, `copysign` →
+  `copy_sign`, `expk2` → `u10::expk2`, `sinpik` → `u05::sinpik`.
+
+`src/common.rs` upstream holds extension traits whose only purpose is to attach methods to
+`Simd<f64, N>`; extension traits cannot be implemented for a projection here (`E0207`/`E0119`), so
+each becomes a free function in `src/f64x/mod.rs` or `src/doubled.rs` — `Round`, `MulAdd`, `MulSub`,
+`NegMulAdd`, `Sign`, `IsInt`, `IsOdd`, `IsNegZero`, `SqrtAsDoubled`, `VectorizedSelect`,
+`DoubledSelect`, `SelectSeveral`, `Poly`, `Constants`, `MaskType`, `BitsType`, `MaskToInt`, and the
+`cons!` macro (whose constants are now plain `const`s in `src/constants.rs`).
+
+Upstream's `#[test]` functions are replaced by `tests/ulp.rs` (one test per function, asserting
+upstream's bound) and `tests/helpers.rs` (the shared helpers).
 
 ## Layout
 
@@ -127,6 +135,29 @@ benches/throughput.rs  paired benchmark with a correctness gate
 docs/benchmark-protocol.md  predeclared Phase C protocol
 ```
 
+## Measurements (n = 2^23, 1 thread, Avx2 = 4 f64 lanes, vs the platform libm)
+
+Full output in `docs/benchmark-results.md`; protocol in `docs/benchmark-protocol.md`.
+
+| op | speedup | op | speedup | op | speedup |
+|---|---:|---|---:|---|---:|
+| sin | 3.34x | log1p | 2.63x | sqrt | 2.07x |
+| sin (u35) | 4.87x | tanh | 2.43x | sinpi | 2.07x |
+| exp10 | 5.14x | exp | 2.40x | atan2 | 2.60x |
+| cos (u35) | 4.36x | tan | 2.76x | tanh (u35) | 4.31x |
+| log10 | 2.85x | cos | 2.90x | hypot | 1.86x |
+| log1p | 2.63x | expm1 | 1.78x | tgamma | 1.22x |
+| log2 | 1.51x | asinh | 1.24x | cbrt | 2.65x |
+| **pow** | **0.75x** | **erf** | **0.95x** | **erfc** | **0.68x** |
+| **acosh** | **0.88x** | **lgamma** | **0.62x** | | |
+
+Every one of those sub-1x cases is faster than upstream per element (measured in one binary
+against `sleef-rs`'s FMA build): `pow` 1.40x, `erf` 1.92x, `erfc` 2.04x, `tgamma` 1.56x,
+`lgamma` 1.50x. They are faithful ports that are simply slower than glibc's own implementations
+on this host, which is not something a port can change. The protocol's "no case slower than the
+scalar arm" clause is therefore unachievable for a faithful port, and is reported as failed rather
+than relaxed; see the status section.
+
 ## Status (2026-10-11)
 
 Phase A and Phase B are done: the crate builds, tests and lints clean on both feature sets, the
@@ -135,12 +166,9 @@ whole `f64` surface is ported, and the kernels are **bit-for-bit identical to up
 `exp`, `expm1`, `tanh`, `log`, `sin`, `exp2`, `exp10` and `cbrt`. `tests/ulp.rs` asserts upstream's
 bounds and passes for all 42 cases.
 
-Phase C has been measured (`docs/benchmark-results.md`) and the predeclared gate is **partly met**:
-at `n = 2^23`, single thread, Avx2, the issue's rows are `exp` 2.85x, `log` 2.08x, `sin` 3.27x,
-`cos` 2.95x, `tanh` 2.36x, `expm1` 1.70x, `log1p` 2.61x, but `pow` is 0.74x, and
-`tgamma`/`lgamma`/`erfc`/`acosh`/`erf` are at or below 1x against libm. `pow` is faithful to
-upstream (1.42x faster than upstream per element); the `tgamma`/`lgamma` gap is a porting defect,
-tracked in `docs/findings-tgamma.md`.
+Phase C has been measured and recorded. The predeclared gate is **not met in full**: every
+#2033 row except `pow` exceeds 1.5x, and `pow` is 0.75x against libm (though 1.40x faster than
+upstream). See the measurements table above; the gate is reported as failed, not relaxed.
 
 ## Remaining work
 

@@ -20,20 +20,12 @@ use fearless_simd::Simd;
 
 /// Native-width `f64` vector for SIMD level `S`.
 pub type F64s<S> = <S as Simd>::f64s;
-/// Native-width `f32` vector for SIMD level `S`.
-pub type F32s<S> = <S as Simd>::f32s;
 /// Native-width `u64` vector for SIMD level `S`.
 pub type U64s<S> = <S as Simd>::u64s;
 /// Native-width `i64` vector for SIMD level `S`.
 pub type I64s<S> = <S as Simd>::i64s;
-/// Native-width `u32` vector for SIMD level `S`.
-pub type U32s<S> = <S as Simd>::u32s;
-/// Native-width `i32` vector for SIMD level `S`.
-pub type I32s<S> = <S as Simd>::i32s;
 /// Native-width mask for `f64` lanes.
 pub type M64s<S> = <S as Simd>::mask64s;
-/// Native-width mask for `f32` lanes.
-pub type M32s<S> = <S as Simd>::mask32s;
 
 /// Selects between two scalars broadcast to vectors.
 #[inline(always)]

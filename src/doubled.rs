@@ -17,7 +17,7 @@
 //!
 //! Extension traits cannot be implemented for `S::f64s` (the projection is not a local type), so
 //! upstream's method-style extension traits (`MulAsDoubled`, …) become free functions here, and
-//! the operators are implemented on the local [`f64::DD`] / [`f32::DD`] types.
+//! the operators are implemented on the local [`f64::DD`] type.
 //!
 //! Every function is defined once by the `dd_family!` macro and instantiated for `f64` and `f32`,
 //! so the two families cannot drift apart.
@@ -282,13 +282,4 @@ dd_family! {
     bits = u64s,
     mask = 0x_ffff_ffff_f800_0000_u64,
     elem = f64
-}
-
-dd_family! {
-    /// Double-double arithmetic over native-width `f32` vectors.
-    mod f32,
-    vector = f32s,
-    bits = u32s,
-    mask = 0x_ffff_f000_u32,
-    elem = f32
 }
