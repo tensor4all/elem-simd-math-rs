@@ -5,7 +5,7 @@
 //! them.
 
 use super::*;
-use crate::doubled::f64::{add_v, mul_as_doubled, mul_v, recip_as_doubled, square, DD};
+use crate::doubled::f64::{add_v, mul_as_doubled, mul_v, square, DD};
 
 /// `sin(pi * d)` for a reduced argument, kept as a double-double.
 #[inline(always)]
@@ -479,37 +479,46 @@ pub fn sqrt<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
 
     let o = d.simd_lt(splat(simd, 8.636_168_555_094_445_e-78));
     let d = o.select(d * splat(simd, 1.157_920_892_373_162_e77), d);
-    let q = o.select(
-        splat(simd, 2.938_735_877_055_718_8_e-39 * 0.5),
-        splat(simd, 0.5),
-    );
+    let q = o.select(splat(simd, 2.938_735_877_055_718_8_e-39), splat(simd, 1.));
 
-    let o = d.simd_gt(splat(simd, 1.340_780_792_994_259_7_e+154));
-    let d = o.select(d * splat(simd, 7.458_340_731_200_207_e-155), d);
-    let q = o.select(splat(simd, 1.157_920_892_373_162_e+77 * 0.5), q);
-
-    let mut x = from_bits(
+    let mut y = from_bits(
         simd,
         int_to_bits(
             simd,
-            splat_int(simd, 0x5fe6_ec86_0000_0000_u64 as i64)
-                - bits_to_int(simd, to_bits(simd, d + splat(simd, 1e-320)) >> 1),
+            splat_int(simd, 0x5fe6_ec85_e7de_30da_u64 as i64)
+                - (bits_to_int(simd, to_bits(simd, d)) >> 1),
         ),
     );
 
-    x *= splat(simd, 1.5) - splat(simd, 0.5) * d * x * x;
-    x *= splat(simd, 1.5) - splat(simd, 0.5) * d * x * x;
-    x *= splat(simd, 1.5) - splat(simd, 0.5) * d * x * x;
-    x *= d;
+    let mut x = d * y;
+    let mut w = splat(simd, 0.5) * y;
+    y = neg_mul_add(simd, x, w, splat(simd, 0.5));
+    x = mla(simd, x, y, x);
+    w = mla(simd, w, y, w);
+    y = neg_mul_add(simd, x, w, splat(simd, 0.5));
+    x = mla(simd, x, y, x);
+    w = mla(simd, w, y, w);
+    y = neg_mul_add(simd, x, w, splat(simd, 0.5));
+    x = mla(simd, x, y, x);
+    w = mla(simd, w, y, w);
 
-    let d2: DD<S> = v_add_dd(simd, d, mul_as_doubled::<S>(x, x)) * recip_as_doubled::<S>(x);
+    y = neg_mul_add(simd, x, w, splat(simd, 1.5));
+    w += w;
+    w *= y;
+    x = w * d;
+    y = mul_sub(simd, w, d, x);
+    let mut z = neg_mul_add(simd, w, x, splat(simd, 1.));
 
-    x = (d2.0 + d2.1) * q;
+    z = neg_mul_add(simd, w, y, z);
+    w = splat(simd, 0.5) * x;
+    w = mla(simd, w, z, y);
+    w += x;
 
-    x = d
-        .simd_eq(splat(simd, f64::INFINITY))
-        .select(splat(simd, f64::INFINITY), x);
-    d.simd_eq(splat(simd, 0.)).select(d, x)
+    w *= q;
+
+    w = (d.simd_eq(splat(simd, 0.)) | d.simd_eq(splat(simd, f64::INFINITY))).select(d, w);
+
+    d.simd_lt(splat(simd, 0.)).select(splat(simd, f64::NAN), w)
 }
 
 /// 2D Euclidean distance function.

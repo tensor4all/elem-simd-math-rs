@@ -321,3 +321,32 @@ fn modf_inner<S: Simd>(simd: S) {
         }
     }
 }
+
+/// `fmod` on exact large integrals.
+///
+/// The quotient estimate has to stay conservative: with a fused multiply-add the product
+/// `toward0(r) * rd` can round up, and a quotient that is one too large makes the loop overshoot
+/// and return a small negative remainder instead of zero. `7 * 2^51` is the smallest case where
+/// the difference shows, and `f64`'s own `%` is the reference.
+fn check_fmod<S: Simd>(simd: S, x: f64, y: f64) {
+    let got = f64x::fmod(simd, F64s::<S>::splat(simd, x), F64s::<S>::splat(simd, y)).to_array();
+    assert_eq!(got.as_ref()[0], x % y, "fmod({x:e}, {y:e})");
+}
+
+#[test]
+fn fmod_of_large_integrals() {
+    let level = Level::new();
+    let cases = [
+        7.0 * 2.0f64.powi(51),
+        3.0 * 2.0f64.powi(52) + 1.0,
+        (1u64 << 62) as f64,
+        1e300,
+        f64::MAX,
+        6.0 * 2.0f64.powi(53),
+    ];
+    for &x in cases.iter() {
+        for &y in [1.0f64, 2.0, 3.0, 8.0, 1.0e150].iter() {
+            dispatch!(level, simd => check_fmod(simd, x, y));
+        }
+    }
+}

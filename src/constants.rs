@@ -80,3 +80,66 @@ pub const D_LN2: (f64, f64) = (
     0.693_147_180_559_945_286_226_764,
     2.319_046_813_846_299_558_417_771_e-17,
 );
+
+// ---------------------------------------------------------------- f32 ----------
+
+/// `2^32`.
+pub const F1_32: f32 = (1u64 << 32) as f32;
+/// `2^30`.
+pub const F1_30: f32 = (1u32 << 30) as f32;
+/// `2^25`.
+pub const F1_25: f32 = (1u32 << 25) as f32;
+/// `2^24`.
+pub const F1_24: f32 = (1u32 << 24) as f32;
+/// `2^23`.
+pub const F1_23: f32 = (1u32 << 23) as f32;
+/// `2^12`.
+pub const F1_12: f32 = (1u32 << 12) as f32;
+/// `2^10`.
+pub const F1_10: f32 = (1u32 << 10) as f32;
+
+/// See [`PI_A`]; the `f32` four-term reduction.
+pub const PI_A_F: f32 = 3.140_625;
+/// See [`PI_A_F`].
+pub const PI_B_F: f32 = 0.000_967_025_756_835_937_5;
+/// See [`PI_A_F`].
+pub const PI_C_F: f32 = 6.277_114_152_908_325_195_3_e-7;
+/// See [`PI_A_F`].
+pub const PI_D_F: f32 = 1.215_420_125_655_342_076_2_e-10;
+/// Argument bound for the `f32` four-term reduction.
+pub const TRIGRANGEMAX_F: f32 = 39000.;
+
+/// See [`PI_A2`]; the `f32` three-term reduction.
+pub const PI_A2_F: f32 = 3.141_479_492_187_5;
+/// See [`PI_A2_F`].
+pub const PI_B2_F: f32 = 0.000_113_159_418_106_079_101_56;
+/// See [`PI_A2_F`].
+pub const PI_C2_F: f32 = 1.984_187_258_941_005_893_6_e-9;
+/// Argument bound for the `f32` three-term reduction.
+pub const TRIGRANGEMAX2_F: f32 = 125.0;
+/// Argument bound for the `f32` two-term reduction.
+pub const TRIGRANGEMAX4_F: f32 = 8e+6;
+
+/// `sqrt(f32::MAX)`.
+pub const SQRT_FLT_MAX: f32 = 18_446_743_523_953_729_536.;
+/// High part of `log10 2` for `f32`.
+pub const L10U_F: f32 = 0.301_025_390_6;
+/// Low part of `log10 2` for `f32`.
+pub const L10L_F: f32 = 4.605_038_981_e-6;
+/// High part of `ln 2` for `f32`.
+pub const L2U_F: f32 = 0.693_145_751_953_125;
+/// Low part of `ln 2` for `f32`.
+pub const L2L_F: f32 = 1.428_606_765_330_187_045_e-6;
+/// `1 / ln 2` for `f32`.
+pub const R_LN2_F: f32 =
+    1.442_695_040_888_963_407_359_924_681_001_892_137_426_645_954_152_985_934_135_449_406_931;
+/// `log2 10` for `f32`.
+pub const LOG10_2_F: f32 = 3.321_928_094_887_362_347_870_319_429_489_390_175_864_831_393;
+
+/// `pi` as a double-double for `f32`.
+pub const D_PI_F: (f32, f32) = (
+    3.141_592_741_012_573_242_2,
+    -8.742_277_657_347_585_773_1_e-8,
+);
+/// `ln 2` as a double-double for `f32`.
+pub const D_LN2_F: (f32, f32) = (0.693_147_182_464_599_609_38, -1.904_654_323_148_236_017_e-9);

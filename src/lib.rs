@@ -34,12 +34,18 @@
 pub mod common;
 pub mod constants;
 pub mod doubled;
+pub mod f32x;
 pub mod f64x;
 pub(crate) mod tables;
 
 mod dispatch;
 
 pub use dispatch::{ElementwiseMath, LengthMismatch};
+
+/// The `f32` slice entry points are also available as free functions here.
+pub mod f32 {
+    pub use crate::dispatch::f32::*;
+}
 
 /// The `f64` slice entry points are also available as free functions here.
 pub mod f64 {

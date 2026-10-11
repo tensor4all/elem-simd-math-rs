@@ -30,5 +30,7 @@ Each kernel documents the error bound of its SLEEF accuracy tier: `u05` = 0.5
 ULP, `u10` = 1.0 ULP, `u15` = 1.5 ULP, `u35` = 3.5 ULP. The bounds are asserted by
 the ported upstream test suites, which compare every result against MPFR.
 
-The port always uses upstream's non-FMA formulation, which stays within the documented
-bound on every SIMD level, including levels without fused multiply-add.
+The port always uses upstream's FMA formulation, and evaluates every fused operation
+through `SimdFloat::mul_add_precise`, which rounds the exact product-plus-add once on
+every level: the hardware instruction where it exists, a correctly rounded emulation
+where it does not.

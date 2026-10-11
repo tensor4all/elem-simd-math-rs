@@ -17,12 +17,15 @@ against `fearless_simd`.
    `fearless_simd` provides a `core::simd`-shaped stable API with runtime level dispatch.
 3. **Accuracy is not relaxed.** The crate keeps SLEEF's tiers and ports upstream's MPFR ULP
    assertions verbatim into `tests/ulp.rs`.
-4. **Upstream's non-FMA formulation everywhere.** Upstream chooses a coefficient set at compile
-   time with `cfg(target_feature = "fma")`; the default (and the one this port takes) is the
-   formulation that stays within the documented bound without fused multiply-add, which makes it
-   valid on every `fearless_simd` level. The double-double layer (`src/doubled.rs`) is likewise
-   built only from split-based formulas and contains no fused operations. Results are therefore
-   *within the same bound* on every level, but are not bit-identical across levels.
+4. **Upstream's FMA formulation everywhere, through `mul_add_precise`.** Upstream chooses a
+   coefficient set at compile time with `cfg(target_feature = "fma")`. This port always takes the
+   FMA set and evaluates every fused operation with `SimdFloat::mul_add_precise`, which rounds the
+   exact product-plus-add once on every level — the hardware instruction where the level has one,
+   a correctly rounded emulation where it does not. `SimdFloat::mul_add` is *not* usable here: it
+   is documented as possibly two roundings, and on SSE2 and WebAssembly without `relaxed-simd` it
+   is literally `a * b + c`, which zeroes the residual of every `mul_as_doubled` and collapses the
+   double-double layer. With the precise variant a level without FMA computes the same values as
+   one with it, so the kernels are bit-identical across levels, not merely within the same bound.
 5. **Destination is `&mut [MaybeUninit<T>]`.** Callers such as `tenferro-cpu` own pooled
    uninitialized buffers and must not zero-fill a buffer that will be fully overwritten.
 6. **Provenance.** Translation of `sleef-rs` rev `3671d46` (MIT OR Apache-2.0), which is itself a
@@ -64,7 +67,8 @@ not invertible in argument position. Therefore:
 * **AVX-512-only branches are not ported.** Upstream guards alternate code with
   `cfg(feature = "enable_avx512f")` and block comments; those branches are skipped, so the
   corresponding literals (e.g. `1024.`) do not appear here.
-* **Compile-time FMA branches**: the non-FMA formulation only (see decision 4).
+* **Compile-time FMA branches**: the FMA formulation, evaluated through
+  `SimdFloat::mul_add_precise` (see decision 4).
 * **`full_fp_rounding` cfg branches**: the default (non-`full_fp_rounding`) branch only.
 * **The `Sleef` convenience trait is not ported.** It only forwards to the tier functions and
   adds no algorithm. `frexp`/`ldexp`/`ilogb`/`nextafter`/`fmod`/`remainder`/`modf`/`fdim`/
@@ -87,6 +91,13 @@ Function-level check over the upstream non-comment bodies (generated, not hand-w
 | `src/f64x/u10.rs` | 40 | 0 |
 | `src/f64x/u15.rs` | 1 | 0 |
 | `src/f64x/u35.rs` | 25 | 0 |
+| `src/f32x.rs` | 35 | 6 — all explained below |
+| `src/f32x/constants.rs` | 0 | 0 |
+| `src/f32x/fast.rs` | 3 | 0 |
+| `src/f32x/u05.rs` | 5 | 0 |
+| `src/f32x/u10.rs` | 31 | 0 |
+| `src/f32x/u15.rs` | 1 | 0 |
+| `src/f32x/u35.rs` | 24 | 1 — `xsqrtf_u35`, which upstream keeps inside a block comment |
 | `src/common.rs` | trait-only | n/a — see below |
 | `doubled` v0.3.3 | `src/lib.rs`, `src/f64x.rs` | 0 |
 
@@ -110,8 +121,18 @@ each becomes a free function in `src/f64x/mod.rs` or `src/doubled.rs` — `Round
 `DoubledSelect`, `SelectSeveral`, `Poly`, `Constants`, `MaskType`, `BitsType`, `MaskToInt`, and the
 `cons!` macro (whose constants are now plain `const`s in `src/constants.rs`).
 
-Upstream's `#[test]` functions are replaced by `tests/ulp.rs` (one test per function, asserting
-upstream's bound) and `tests/helpers.rs` (the shared helpers).
+The six names from `src/f32x.rs` that are not present by name are the same kind of folding as
+above: `copysign` → `copy_sign`, `rintfk2` → `rint` (identical), `visinf2_vf_vf_v` → `visinf2`,
+`sinpifk`/`cospifk` → the private helpers of `src/f32x/u05.rs` (upstream keeps them in `f32x.rs`;
+the `f64` port made the same move), and `expk2` → `u10::expk2f`, which keeps upstream's trailing
+`f` because `u15` reaches it by name.
+
+The `f32` kernels drop the trailing `f` that upstream's names carry (`expf` → `exp`, `erff` →
+`erf`, `sincosf_deterministic` → `sincos_deterministic`), so that one macro can generate the two
+slice APIs from one list of names. The private helpers keep upstream's spelling.
+
+Upstream's `#[test]` functions are replaced by `tests/ulp.rs` and `tests/ulp32.rs` (one test per
+function, asserting upstream's bound) and `tests/helpers.rs` (the shared helpers).
 
 ## Layout
 
@@ -127,11 +148,19 @@ src/f64x/u05.rs     sinpi, cospi, sincospi, sqrt, hypot
 src/f64x/u10.rs     the 1.0 ULP tier
 src/f64x/u15.rs     erfc
 src/f64x/u35.rs     the 3.5 ULP tier
-src/f32x/           not started (Phase D, outside this goal)
-src/dispatch.rs     ElementwiseMath trait + slice entry points
-tests/ulp.rs        MPFR ULP suite, upstream's bounds
+src/f32x/mod.rs     f32 helper layer, mirroring src/f64x/mod.rs one-for-one
+src/f32x/u05.rs     sinpi, cospi, sincospi, sqrt, hypot
+src/f32x/u10.rs     the 1.0 ULP tier
+src/f32x/u15.rs     erfc
+src/f32x/u35.rs     the 3.5 ULP tier
+src/f32x/fast.rs    the ~350 ULP tier, reachable as f32x::fast but not part of the slice API
+src/dispatch.rs     ElementwiseMath trait + slice entry points; one macro generates the f32 and
+                    f64 modules, so the two families cannot drift apart
+tests/ulp.rs        MPFR ULP suite for f64, upstream's bounds
+tests/ulp32.rs      MPFR ULP suite for f32, upstream's f32 bounds
+tests/common/mod.rs the ULP harness both suites share
 tests/scalar.rs     the --no-default-features path
-benches/throughput.rs  paired benchmark with a correctness gate
+benches/throughput.rs  paired benchmark for both families, with a correctness gate
 docs/benchmark-protocol.md  predeclared Phase C protocol
 ```
 
@@ -158,9 +187,9 @@ on this host, which is not something a port can change. The protocol's "no case 
 scalar arm" clause is therefore unachievable for a faithful port, and is reported as failed rather
 than relaxed; see the status section.
 
-## Status (2026-10-11)
+## Status (2026-10-12)
 
-Phase A and Phase B are done: the crate builds, tests and lints clean on both feature sets, the
+Phases A, B, C and D are done: the crate builds, tests and lints clean on both feature sets, the
 whole `f64` surface is ported, and the kernels are **bit-for-bit identical to upstream's FMA build**
 (`sleef-rs` compiled with `-C target-feature=+fma`) over 20 000 samples per function for
 `exp`, `expm1`, `tanh`, `log`, `sin`, `exp2`, `exp10` and `cbrt`. `tests/ulp.rs` asserts upstream's
@@ -170,9 +199,64 @@ Phase C has been measured and recorded. The predeclared gate is **not met in ful
 #2033 row except `pow` exceeds 1.5x, and `pow` is 0.75x against libm (though 1.40x faster than
 upstream). See the measurements table above; the gate is reported as failed, not relaxed.
 
-## Remaining work
+## Phases D–G (in progress)
 
-1. `f32x` family (Phase D, outside this goal).
-2. Parallel chunking of the slice drivers inside a caller-owned pool; the drivers are serial and
-   the caller decides threading.
-3. `REMPITABSP` and the `f32` constants land with the `f32` family.
+| phase | state |
+|---|---|
+| D1 element-generic helpers shared in `common.rs` | done; f64 still bit-identical to upstream |
+| D2 `f32` constants, `REMPITABSP`, aliases, `dd_family!` for f32 | done |
+| D3 `src/f32x/mod.rs` + `constants.rs` helper layer | done; all 50 f64 helpers have an f32 counterpart |
+| D4 `f32x/u05`, `u10`, `u15`, `u35`, `fast` | done; 4 858 lines, 65 public kernels |
+| D5 `f32` slice API, `f32` ULP tests, benchmark for both dtypes | done; 47 f32 ULP tests pass, both dtypes are bit-identical to upstream's FMA build, and both benchmark families are recorded in `docs/benchmark-results.md` |
+| E push + PR + merge `elem-simd-math-rs` (no crates.io publish) | pending |
+| F integrate into `tenferro-cpu` for f32 and f64 | worktree `../.worktrees/tenferro-simd-math` on branch `simd-math-analytic-fast-path` prepared |
+| G report on #2033 | pending |
+
+The `f32` surface mirrors the `f64` one exactly; upstream's `src/f32x/` exports `u05`
+(`sincospi`, `sqrt`, `hypot`, `sinpi`, `cospi`), `u10` (the 1.0 ULP tier), `u15` (`erfc`), `u35`
+(the 3.5 ULP tier) and `fast` (`sin`, `cos`, `pow` at roughly 350 ULP).
+
+`tests/common/mod.rs` holds one ULP harness generic over the scalar type, so the two suites share
+it; `tests/ulp32.rs` carries the f32 case tables, whose bounds differ from f64's: `tanh` and
+`atanh` are 1.0001, `erfc` is 1.5, and the `u35` tier is 3.5.
+
+### What the f32 work and its review turned up
+
+1. **`from_slice_offset` indexed past the Payne–Hanek table for non-finite arguments.** Upstream
+   reaches the table through an unchecked gather, so `sin(inf)` reads past `REMPITABSP` there; our
+   version is a safe Rust index, which panicked instead. The index is now clamped to the table,
+   which leaves every in-domain value untouched and lets the caller's non-finite mask produce the
+   NaN `sin(inf)` is supposed to be. `f64` had the same latent overrun for `inf` and is clamped
+   too.
+2. **The `*pi` oracles needed more than 128 bits.** `sin(pi * x)` loses a bit per bit of `x`, so at
+   the default precision a half-integer argument around `2^21` came back ~`x * 2^-128` away from
+   the true zero — larger than the asserted sub-ULP bound, and *our* result was the correct one.
+   The oracles now work at 512 bits. The `f64` suite never hit it because an exact integer is
+   vanishingly unlikely in a 53-bit sample; in `f32` it happens to one sample in sixteen.
+3. **The f32 sample generator asked for `f32::MAX` but got `1e306`.** The clamp that keeps
+   full-range samples finite was written for `f64`; for `f32` it produced `inf`, which is what
+   tripped (1). `UlpScalar` now carries the per-type limit.
+4. **`f64x::fmod` and `f64x::remainder` returned a *negative* remainder for some exact large
+   integrals.** Upstream clears the low bit of the quotient on its FMA branch, because the fused
+   product `toward0(r) * rd` can round up and the loop then overshoots; the port had dropped that
+   correction and also computed `rd` as `1 / toward0(d)` where upstream writes `toward0(1 / d)`.
+   `fmod(7 * 2^51, 1)` returned `-2` instead of `0`. Both are fixed and `tests/helpers.rs` pins the
+   case; the `f32` counterparts never had the correction upstream, so nothing changed there.
+5. **`f32x::ldexpk` grouped the four `2^m` factors differently from upstream.** Upstream multiplies
+   by `u*u*u*u` and only then by `2^q`; the port multiplied left to right, so an intermediate that
+   overflows upstream did not overflow here. Mathematically the port was the better one, but it
+   broke bit-identity, so the grouping now matches.
+6. **The `tests/ulp32.rs` bounds for `f32` `asinh` and `acosh` were 1.0 where upstream asserts
+   1.0001.** The port passed, so this was only a matter of asserting the same thing upstream does.
+7. **`f64x::u05::sqrt` was still upstream's non-FMA branch** — the only kernel left on it, because
+   `u05` was ported before the FMA decision was taken. It has the `1.34e154` scaling and the
+   split-form Newton iterations that the FMA branch drops, so it was neither bit-identical to
+   upstream's `+fma` build nor as fast. It is now the FMA branch, like the `f32` one next to it.
+
+The `f64` kernels were compared against upstream's `+fma` build over 20 016 inputs each for `sin`,
+`cos`, `tan`, `sincos`, `sinpi`, `cospi`, `expm1`, `log`, `exp2`, `erfc` and `atan` (`f32`) and the
+eight named in the status section (`f64`); the comparison harness itself is a scratch crate outside
+this repository, since pulling `sleef-rs` in as a dev-dependency would drag in a nightly
+`portable_simd` build.
+
+## Remaining work
