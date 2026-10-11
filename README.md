@@ -125,9 +125,10 @@ its source on every one of them (`pow` 1.40x, `erf` 1.92x, `erfc` 2.04x, `tgamma
 `lgamma` 1.50x). Two different reasons are behind the gap:
 
 * **`pow`** — glibc's implementation is both faster *and* more accurate (0.504 ULP against SLEEF's
-  1.0), and SLEEF offers no cheaper tier for it. There is nothing to gain by routing `pow`
-  through this crate, and the reference benchmark's `pow` workload (a constant exponent of 1.5)
-  is much better served by `x * sqrt(x)`, which measures 0.70 ns/elem.
+  1.0), and SLEEF offers no cheaper tier for it. A vectorised port of the FDLIBM `pow` was also
+  written and measured here and lost as well (0.59x of glibc); see `docs/findings-pow.md`. Keep the
+  platform `libm` for `pow`. The reference benchmark's `pow` workload — a constant exponent of
+  1.5 — is far better served by `x * sqrt(x)`, which measures 0.70 ns/elem.
 * **`erfc`, `lgamma`, `acosh`, `erf`** — SLEEF deliberately spends time to beat glibc's accuracy
   (`erf` 0.75 ULP against glibc's 3.15). Matching glibc's speed here would mean giving up that
   accuracy, which this port does not do.
