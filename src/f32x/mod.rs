@@ -253,7 +253,9 @@ pub fn ldexpk<S: Simd>(simd: S, x: F32s<S>, q: I32s<S>) -> F32s<S> {
         .simd_gt(splat_int(simd, 0xff))
         .select(splat_int(simd, 0xff), m);
     let y = from_bits(simd, int_to_bits(simd, m) << 23);
-    x * y * y * y * y * pow2i(simd, q)
+    // Upstream multiplies by `u*u*u*u` and only then by the rest; the grouping is observable
+    // when the intermediate overflows, so it is kept.
+    x * (y * y * y * y) * pow2i(simd, q)
 }
 
 /// Multiply by an integral power of two.

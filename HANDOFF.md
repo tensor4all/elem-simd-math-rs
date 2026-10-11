@@ -17,12 +17,15 @@ against `fearless_simd`.
    `fearless_simd` provides a `core::simd`-shaped stable API with runtime level dispatch.
 3. **Accuracy is not relaxed.** The crate keeps SLEEF's tiers and ports upstream's MPFR ULP
    assertions verbatim into `tests/ulp.rs`.
-4. **Upstream's non-FMA formulation everywhere.** Upstream chooses a coefficient set at compile
-   time with `cfg(target_feature = "fma")`; the default (and the one this port takes) is the
-   formulation that stays within the documented bound without fused multiply-add, which makes it
-   valid on every `fearless_simd` level. The double-double layer (`src/doubled.rs`) is likewise
-   built only from split-based formulas and contains no fused operations. Results are therefore
-   *within the same bound* on every level, but are not bit-identical across levels.
+4. **Upstream's FMA formulation everywhere, through `mul_add_precise`.** Upstream chooses a
+   coefficient set at compile time with `cfg(target_feature = "fma")`. This port always takes the
+   FMA set and evaluates every fused operation with `SimdFloat::mul_add_precise`, which rounds the
+   exact product-plus-add once on every level — the hardware instruction where the level has one,
+   a correctly rounded emulation where it does not. `SimdFloat::mul_add` is *not* usable here: it
+   is documented as possibly two roundings, and on SSE2 and WebAssembly without `relaxed-simd` it
+   is literally `a * b + c`, which zeroes the residual of every `mul_as_doubled` and collapses the
+   double-double layer. With the precise variant a level without FMA computes the same values as
+   one with it, so the kernels are bit-identical across levels, not merely within the same bound.
 5. **Destination is `&mut [MaybeUninit<T>]`.** Callers such as `tenferro-cpu` own pooled
    uninitialized buffers and must not zero-fill a buffer that will be fully overwritten.
 6. **Provenance.** Translation of `sleef-rs` rev `3671d46` (MIT OR Apache-2.0), which is itself a
@@ -64,7 +67,8 @@ not invertible in argument position. Therefore:
 * **AVX-512-only branches are not ported.** Upstream guards alternate code with
   `cfg(feature = "enable_avx512f")` and block comments; those branches are skipped, so the
   corresponding literals (e.g. `1024.`) do not appear here.
-* **Compile-time FMA branches**: the non-FMA formulation only (see decision 4).
+* **Compile-time FMA branches**: the FMA formulation, evaluated through
+  `SimdFloat::mul_add_precise` (see decision 4).
 * **`full_fp_rounding` cfg branches**: the default (non-`full_fp_rounding`) branch only.
 * **The `Sleef` convenience trait is not ported.** It only forwards to the tier functions and
   adds no algorithm. `frexp`/`ldexp`/`ilogb`/`nextafter`/`fmod`/`remainder`/`modf`/`fdim`/
@@ -216,7 +220,7 @@ The `f32` surface mirrors the `f64` one exactly; upstream's `src/f32x/` exports 
 it; `tests/ulp32.rs` carries the f32 case tables, whose bounds differ from f64's: `tanh` and
 `atanh` are 1.0001, `erfc` is 1.5, and the `u35` tier is 3.5.
 
-### Three things the f32 work turned up
+### What the f32 work and its review turned up
 
 1. **`from_slice_offset` indexed past the Payne–Hanek table for non-finite arguments.** Upstream
    reaches the table through an unchecked gather, so `sin(inf)` reads past `REMPITABSP` there; our
@@ -232,5 +236,23 @@ it; `tests/ulp32.rs` carries the f32 case tables, whose bounds differ from f64's
 3. **The f32 sample generator asked for `f32::MAX` but got `1e306`.** The clamp that keeps
    full-range samples finite was written for `f64`; for `f32` it produced `inf`, which is what
    tripped (1). `UlpScalar` now carries the per-type limit.
+4. **`f64x::fmod` and `f64x::remainder` returned a *negative* remainder for some exact large
+   integrals.** Upstream clears the low bit of the quotient on its FMA branch, because the fused
+   product `toward0(r) * rd` can round up and the loop then overshoots; the port had dropped that
+   correction and also computed `rd` as `1 / toward0(d)` where upstream writes `toward0(1 / d)`.
+   `fmod(7 * 2^51, 1)` returned `-2` instead of `0`. Both are fixed and `tests/helpers.rs` pins the
+   case; the `f32` counterparts never had the correction upstream, so nothing changed there.
+5. **`f32x::ldexpk` grouped the four `2^m` factors differently from upstream.** Upstream multiplies
+   by `u*u*u*u` and only then by `2^q`; the port multiplied left to right, so an intermediate that
+   overflows upstream did not overflow here. Mathematically the port was the better one, but it
+   broke bit-identity, so the grouping now matches.
+6. **The `tests/ulp32.rs` bounds for `f32` `asinh` and `acosh` were 1.0 where upstream asserts
+   1.0001.** The port passed, so this was only a matter of asserting the same thing upstream does.
+
+The `f64` kernels were compared against upstream's `+fma` build over 20 016 inputs each for `sin`,
+`cos`, `tan`, `sincos`, `sinpi`, `cospi`, `expm1`, `log`, `exp2`, `erfc` and `atan` (`f32`) and the
+eight named in the status section (`f64`); the comparison harness itself is a scratch crate outside
+this repository, since pulling `sleef-rs` in as a dev-dependency would drag in a nightly
+`portable_simd` build.
 
 ## Remaining work

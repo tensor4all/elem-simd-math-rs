@@ -72,6 +72,8 @@ https://crates.io/crates/doubled (version 0.3.3)
 
 License: MIT OR Apache-2.0. Full texts in `LICENSE-MIT` and `LICENSE-APACHE`.
 
+  Copyright (c) 2018 Jorge Aparicio
+
 ================================================================================
 fearless_simd — stable-Rust SIMD abstraction
 https://crates.io/crates/fearless_simd

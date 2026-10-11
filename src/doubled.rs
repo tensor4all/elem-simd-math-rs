@@ -3,15 +3,18 @@
 //! Ported from the `doubled` crate v0.3.3 (`src/lib.rs`, `src/f64x.rs`, `src/f32x.rs`) as used by
 //! `sleef-rs` rev `3671d46`. Only the operations the ported kernels call are kept.
 //!
+//! The `doubled` crate is MIT OR Apache-2.0, Copyright (c) 2018 Jorge Aparicio; see
+//! `THIRD-PARTY-LICENSES`.
+//!
 //! # Fused formulation
 //!
 //! Upstream selects between an FMA-based and a split-based formulation at compile time
 //! (`cfg(target_feature = "fma")`). This port always uses the FMA-based one, evaluated with
-//! [`fearless_simd::SimdFloat::mul_add`], which is a single fused operation wherever the CPU has
-//! FMA and degrades to a separate multiply and add elsewhere. On an FMA-capable level the results
-//! are therefore identical to upstream's FMA build; on a level without FMA they are what
-//! upstream's FMA branch computes when it is compiled without `+fma`. The split-based formulation
-//! was measurably slower on the double-double-heavy kernels without being more accurate.
+//! [`fearless_simd::SimdFloat::mul_add_precise`], which rounds the exact product-plus-add once on
+//! every level. Plain `mul_add` must not be substituted: on SSE2 and on WebAssembly without
+//! `relaxed-simd` it is `a * b + c`, which makes the residual below exactly zero and collapses
+//! the whole layer to single precision. The split-based formulation was measurably slower on the
+//! double-double-heavy kernels without being more accurate.
 //!
 //! # Shape
 //!
@@ -25,7 +28,7 @@
 macro_rules! dd_family {
     (
         $(#[$meta:meta])*
-        mod $modname:ident, vector = $vec:ident, bits = $bits:ident, mask = $mask:expr, elem = $elem:ty
+        mod $modname:ident, vector = $vec:ident, elem = $elem:ty
     ) => {
         $(#[$meta])*
         pub mod $modname {
@@ -96,19 +99,19 @@ macro_rules! dd_family {
             #[inline(always)]
             pub fn square<S: Simd>(d: DD<S>) -> DD<S> {
                 let r0 = d.0 * d.0;
-                DD::new(r0, (d.0 + d.0).mul_add(d.1, d.0.mul_add(d.0, -r0)))
+                DD::new(r0, (d.0 + d.0).mul_add_precise(d.1, d.0.mul_add_precise(d.0, -r0)))
             }
 
             /// Squares and collapses to a single vector.
             #[inline(always)]
             pub fn square_as_f<S: Simd>(d: DD<S>) -> S::$vec {
-                d.0.mul_add(d.0, d.0 * d.1 + d.0 * d.1)
+                d.0.mul_add_precise(d.0, d.0 * d.1 + d.0 * d.1)
             }
 
             /// Multiplies and collapses to a single vector.
             #[inline(always)]
             pub fn mul_as_f<S: Simd>(d: DD<S>, other: DD<S>) -> S::$vec {
-                d.0.mul_add(other.0, d.1.mul_add(other.0, d.0 * other.1))
+                d.0.mul_add_precise(other.0, d.1.mul_add_precise(other.0, d.0 * other.1))
             }
 
             /// Reciprocal of the represented value.
@@ -118,7 +121,7 @@ macro_rules! dd_family {
                 let q0 = one / d.0;
                 DD::new(
                     q0,
-                    q0 * (-d.1).mul_add(q0, (-d.0).mul_add(q0, one)),
+                    q0 * (-d.1).mul_add_precise(q0, (-d.0).mul_add_precise(q0, one)),
                 )
             }
 
@@ -137,7 +140,7 @@ macro_rules! dd_family {
             #[inline(always)]
             pub fn mul_as_doubled<S: Simd>(x: S::$vec, y: S::$vec) -> DD<S> {
                 let r0 = x * y;
-                DD::new(r0, x.mul_add(y, -r0))
+                DD::new(r0, x.mul_add_precise(y, -r0))
             }
 
             /// Reciprocal of a vector as an unevaluated sum.
@@ -145,7 +148,7 @@ macro_rules! dd_family {
             pub fn recip_as_doubled<S: Simd>(x: S::$vec) -> DD<S> {
                 let one = S::$vec::splat(x.token(), 1.0 as $elem);
                 let q0 = one / x;
-                DD::new(q0, q0 * (-x).mul_add(q0, one))
+                DD::new(q0, q0 * (-x).mul_add_precise(q0, one))
             }
 
             /// The exact sum `x + y` split into two components.
@@ -175,7 +178,7 @@ macro_rules! dd_family {
             #[inline(always)]
             pub fn mul_v<S: Simd>(d: DD<S>, v: S::$vec) -> DD<S> {
                 let r0 = d.0 * v;
-                DD::new(r0, d.1.mul_add(v, d.0.mul_add(v, -r0)))
+                DD::new(r0, d.1.mul_add_precise(v, d.0.mul_add_precise(v, -r0)))
             }
 
             /// `v + d`, matching upstream's `T + Doubled<T>`.
@@ -223,9 +226,9 @@ macro_rules! dd_family {
                     let r0 = self.0 * other.0;
                     DD::new(
                         r0,
-                        self.0.mul_add(
+                        self.0.mul_add_precise(
                             other.1,
-                            self.1.mul_add(other.0, self.0.mul_add(other.0, -r0)),
+                            self.1.mul_add_precise(other.0, self.0.mul_add_precise(other.0, -r0)),
                         ),
                     )
                 }
@@ -248,9 +251,9 @@ macro_rules! dd_family {
                     let t = one / other.0;
 
                     let q0 = self.0 * t;
-                    let u = t.mul_add(self.0, -q0);
-                    let mut q1 = (-other.1).mul_add(t, (-other.0).mul_add(t, one));
-                    q1 = q0.mul_add(q1, self.1.mul_add(t, u));
+                    let u = t.mul_add_precise(self.0, -q0);
+                    let mut q1 = (-other.1).mul_add_precise(t, (-other.0).mul_add_precise(t, one));
+                    q1 = q0.mul_add_precise(q1, self.1.mul_add_precise(t, u));
 
                     DD::new(q0, q1)
                 }
@@ -279,8 +282,6 @@ dd_family! {
     /// Double-double arithmetic over native-width `f64` vectors.
     mod f64,
     vector = f64s,
-    bits = u64s,
-    mask = 0x_ffff_ffff_f800_0000_u64,
     elem = f64
 }
 
@@ -288,7 +289,5 @@ dd_family! {
     /// Double-double arithmetic over native-width `f32` vectors.
     mod f32,
     vector = f32s,
-    bits = u32s,
-    mask = 0x_ffff_f000_u32,
     elem = f32
 }

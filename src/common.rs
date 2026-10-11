@@ -8,7 +8,7 @@
 //! | `sleef-rs` | `elem-simd-math` |
 //! |---|---|
 //! | `F64x<N>` | `F64s<S>` |
-//! | `x.mla(y, z)` | `x.mul_add(y, z)` |
+//! | `x.mla(y, z)` | `x.mul_add_precise(y, z)` |
 //! | `F64x::splat(v)` | `F64s::<S>::splat(simd, v)` |
 //! | `F64x::poly8(…)` | `poly8(simd, …)` |
 //! | `m.select_splat(l, r)` | `select_splat(m, l, r)` |
@@ -45,19 +45,19 @@ use fearless_simd::prelude::*;
 /// kernel families, hence generic over the vector type.
 #[inline(always)]
 pub fn mla<S: Simd, V: SimdFloat<S>>(_simd: S, x: V, y: V, z: V) -> V {
-    x.mul_add(y, z)
+    x.mul_add_precise(y, z)
 }
 
 /// `x * y - z`, fused wherever the CPU supports it. See [`mla`].
 #[inline(always)]
 pub fn mul_sub<S: Simd, V: SimdFloat<S>>(_simd: S, x: V, y: V, z: V) -> V {
-    x.mul_sub(y, z)
+    x.mul_sub_precise(y, z)
 }
 
 /// `z - x * y`, fused wherever the CPU supports it. See [`mla`].
 #[inline(always)]
 pub fn neg_mul_add<S: Simd, V: SimdFloat<S>>(_simd: S, x: V, y: V, z: V) -> V {
-    (-x).mul_add(y, z)
+    (-x).mul_add_precise(y, z)
 }
 
 /// Estrin polynomial evaluation with scalar coefficients, degree 2.

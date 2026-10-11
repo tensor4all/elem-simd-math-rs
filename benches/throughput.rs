@@ -15,8 +15,6 @@ use elem_simd_math::LengthMismatch;
 
 /// Primary size: 2^23 elements, matching the `real.*` rows of tenferro-rs#2033.
 const PRIMARY: usize = 1 << 23;
-/// Secondary sizes, to show scaling.
-const SIZES: [usize; 2] = [1 << 16, PRIMARY];
 /// Warmups and timed rounds per case.
 const WARMUP: usize = 2;
 const ROUNDS: usize = 7;
@@ -186,7 +184,7 @@ macro_rules! bench_family {
                     "op", "scalar", "kernel", "speedup", "max |diff|", "rel"
                 );
 
-                for size in SIZES {
+                for size in [PRIMARY] {
                     let src = unary_input(size);
                     let rhs: Vec<$scalar> = (0..size)
                         .map(|i| 1.0 + (i % 64) as f64 * 0.03125)
@@ -196,10 +194,6 @@ macro_rules! bench_family {
                     let mut out = uninit(size);
                     #[cfg(feature = "simd")]
                     let (mut pair_a, mut pair_b) = (uninit(size), uninit(size));
-
-                    if size != PRIMARY {
-                        continue;
-                    }
 
                     for case in common().iter().chain(simd_only()) {
                         for _ in 0..WARMUP {
@@ -283,7 +277,6 @@ macro_rules! bench_family {
 
                     // `pow` on the shape the reference issue measures: a full tensor of `1.5`.
                     {
-                        let _ = &exps;
                         for _ in 0..WARMUP {
                             ops::pow(&src, &exps, &mut out).expect("lengths match");
                         }

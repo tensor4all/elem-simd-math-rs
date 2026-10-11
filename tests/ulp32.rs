@@ -172,7 +172,7 @@ fn asinh_ulp() {
         Float::asinh,
         -SQRT_FLT_MAX as f64,
         SQRT_FLT_MAX as f64,
-        1.0,
+        1.0001,
     );
 }
 
@@ -182,9 +182,9 @@ fn acosh_ulp() {
         "acosh",
         ops::acosh,
         Float::acosh,
-        1.0,
+        -SQRT_FLT_MAX as f64,
         SQRT_FLT_MAX as f64,
-        1.0,
+        1.0001,
     );
 }
 

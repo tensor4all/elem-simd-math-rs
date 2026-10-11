@@ -1914,60 +1914,56 @@ fn logk<S: Simd>(simd: S, mut d: F64s<S>) -> DD<S> {
 /// Returns `x` raised to the power of `y`. The error bound of the returned value is `1.0 ULP`.
 #[inline(always)]
 pub fn pow<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
-    if true {
-        let yisint = is_integer(simd, y);
-        let yisodd = is_odd(simd, y) & yisint;
+    let yisint = is_integer(simd, y);
+    let yisodd = is_odd(simd, y) & yisint;
 
-        let d = mul_v(logk(simd, x.abs()), y);
-        let mut result = expk(simd, d);
-        result =
-            d.0.simd_gt(splat(simd, 709.782_711_149_557_429_092_172_174_26))
-                .select(splat(simd, f64::INFINITY), result);
+    let d = mul_v(logk(simd, x.abs()), y);
+    let mut result = expk(simd, d);
+    result =
+        d.0.simd_gt(splat(simd, 709.782_711_149_557_429_092_172_174_26))
+            .select(splat(simd, f64::INFINITY), result);
 
-        result *= x.simd_gt(splat(simd, 0.)).select(
-            splat(simd, 1.),
-            yisint.select(
-                yisodd.select(splat(simd, -1.), splat(simd, 1.)),
-                splat(simd, f64::NAN),
-            ),
-        );
+    result *= x.simd_gt(splat(simd, 0.)).select(
+        splat(simd, 1.),
+        yisint.select(
+            yisodd.select(splat(simd, -1.), splat(simd, 1.)),
+            splat(simd, f64::NAN),
+        ),
+    );
 
-        let efx = mul_sign(simd, x.abs() - splat(simd, 1.), y);
+    let efx = mul_sign(simd, x.abs() - splat(simd, 1.), y);
 
-        result = y.is_infinite().select(
-            from_bits(
-                simd,
-                !efx.simd_lt(splat(simd, 0.))
-                    .select(splat_bits(simd, u64::MAX), splat_bits(simd, 0))
-                    & to_bits(
-                        simd,
-                        efx.simd_eq(splat(simd, 0.))
-                            .select(splat(simd, 1.), splat(simd, f64::INFINITY)),
-                    ),
-            ),
-            result,
-        );
-
-        result = (x.is_infinite() | x.simd_eq(splat(simd, 0.))).select(
-            mul_sign(
-                simd,
-                (y.is_sign_negative() ^ x.simd_eq(splat(simd, 0.)))
-                    .select(splat(simd, 0.), splat(simd, f64::INFINITY)),
-                yisodd.select(x, splat(simd, 1.)),
-            ),
-            result,
-        );
-
-        result = from_bits(
+    result = y.is_infinite().select(
+        from_bits(
             simd,
-            (x.is_nan() | y.is_nan()).select(splat_bits(simd, u64::MAX), splat_bits(simd, 0))
-                | to_bits(simd, result),
-        );
+            !efx.simd_lt(splat(simd, 0.))
+                .select(splat_bits(simd, u64::MAX), splat_bits(simd, 0))
+                & to_bits(
+                    simd,
+                    efx.simd_eq(splat(simd, 0.))
+                        .select(splat(simd, 1.), splat(simd, f64::INFINITY)),
+                ),
+        ),
+        result,
+    );
 
-        (y.simd_eq(splat(simd, 0.)) | x.simd_eq(splat(simd, 1.))).select(splat(simd, 1.), result)
-    } else {
-        expk(simd, mul_v(logk(simd, x), y))
-    }
+    result = (x.is_infinite() | x.simd_eq(splat(simd, 0.))).select(
+        mul_sign(
+            simd,
+            (y.is_sign_negative() ^ x.simd_eq(splat(simd, 0.)))
+                .select(splat(simd, 0.), splat(simd, f64::INFINITY)),
+            yisodd.select(x, splat(simd, 1.)),
+        ),
+        result,
+    );
+
+    result = from_bits(
+        simd,
+        (x.is_nan() | y.is_nan()).select(splat_bits(simd, u64::MAX), splat_bits(simd, 0))
+            | to_bits(simd, result),
+    );
+
+    (y.simd_eq(splat(simd, 0.)) | x.simd_eq(splat(simd, 1.))).select(splat(simd, 1.), result)
 }
 
 /// Cube root function.

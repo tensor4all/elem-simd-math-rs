@@ -194,31 +194,6 @@ macro_rules! unary {
         };
     }
 
-macro_rules! unary_u35 {
-        ($($name:ident, $kernel:path, $scalar:expr, $doc:literal;)*) => {
-            $(
-                #[doc = $doc]
-                #[inline]
-                pub fn $name(
-                    src: &[Scalar],
-                    dst: &mut [MaybeUninit<Scalar>],
-                ) -> Result<(), LengthMismatch> {
-                    lengths(src.len(), dst.len())?;
-                    #[cfg(feature = "simd")]
-                    {
-                        let level = fearless_simd::Level::new();
-                        fearless_simd::dispatch!(level, simd => run(simd, $kernel, src, dst));
-                    }
-                    #[cfg(not(feature = "simd"))]
-                    {
-                        scalar_apply(src, dst, $scalar);
-                    }
-                    Ok(())
-                }
-            )*
-        };
-    }
-
 macro_rules! pair {
         ($($name:ident, $kernel:path, $scalar:expr, $doc:literal;)*) => {
             $(
@@ -479,7 +454,7 @@ pub mod $modname {
 
 
 
-    unary_u35! {
+    unary! {
         sin_u35,   xkernels::u35::sin,   <$ty>::sin,    "Sine function, 3.5 ULP tier.";
         cos_u35,   xkernels::u35::cos,   <$ty>::cos,    "Cosine function, 3.5 ULP tier.";
         tan_u35,   xkernels::u35::tan,   <$ty>::tan,    "Tangent function, 3.5 ULP tier.";

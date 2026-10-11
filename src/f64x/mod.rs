@@ -470,13 +470,17 @@ pub fn fmod<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
     let n = o.select(n * splat(simd, D1_54), n);
     let d = o.select(d * splat(simd, D1_54), d);
     let s = o.select(s * splat(simd, 1. / D1_54), s);
-    let rd = splat(simd, 1.) / toward0(simd, d);
+    let rd = toward0(simd, splat(simd, 1.) / d);
     let mut r: DD<S> = DD::new(n, splat(simd, 0.));
 
     for _ in 0..21 {
         // ceil(log2(DBL_MAX) / 52) iterations are sufficient.
         let r0: F64s<S> = r.0;
         let mut q = trunc_positive(simd, toward0(simd, r0) * rd);
+        // The product above is rounded up on the fused path, so the quotient has to be made
+        // conservative before the loop relies on it; upstream clears the low bit here for exactly
+        // that reason, and without it the loop can overshoot and return a negative remainder.
+        q = from_bits(simd, to_bits(simd, q) & splat_bits(simd, u64::MAX - 1));
         let big = (splat(simd, 3.) * d).simd_gt(r0) & r0.simd_ge(d);
         q = big.select(splat(simd, 2.), q);
         let mid = (d + d).simd_gt(r0) & r0.simd_ge(d);
@@ -516,6 +520,8 @@ pub fn remainder<S: Simd>(simd: S, x: F64s<S>, y: F64s<S>) -> F64s<S> {
     for _ in 0..21 {
         // ceil(log2(DBL_MAX) / 52) iterations are sufficient.
         let mut q = rint(simd, r.0 * rd);
+        // As in `fmod`: the fused product can round up, and `q` has to stay conservative.
+        q = from_bits(simd, to_bits(simd, q) & splat_bits(simd, u64::MAX - 1));
         q =
             r.0.abs()
                 .simd_lt(d * splat(simd, 1.5))
