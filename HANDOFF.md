@@ -248,6 +248,10 @@ it; `tests/ulp32.rs` carries the f32 case tables, whose bounds differ from f64's
    broke bit-identity, so the grouping now matches.
 6. **The `tests/ulp32.rs` bounds for `f32` `asinh` and `acosh` were 1.0 where upstream asserts
    1.0001.** The port passed, so this was only a matter of asserting the same thing upstream does.
+7. **`f64x::u05::sqrt` was still upstream's non-FMA branch** — the only kernel left on it, because
+   `u05` was ported before the FMA decision was taken. It has the `1.34e154` scaling and the
+   split-form Newton iterations that the FMA branch drops, so it was neither bit-identical to
+   upstream's `+fma` build nor as fast. It is now the FMA branch, like the `f32` one next to it.
 
 The `f64` kernels were compared against upstream's `+fma` build over 20 016 inputs each for `sin`,
 `cos`, `tan`, `sincos`, `sinpi`, `cospi`, `expm1`, `log`, `exp2`, `erfc` and `atan` (`f32`) and the

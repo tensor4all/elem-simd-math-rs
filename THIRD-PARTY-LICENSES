@@ -6,7 +6,7 @@ SLEEF — SIMD Library for Evaluating Elementary Functions
 https://github.com/shibatch/sleef
 ================================================================================
 
-The kernels in `src/f64x/` and `src/tables.rs` are close translations of SLEEF's
+The kernels in `src/f64x/`, `src/f32x/` and `src/tables.rs` are close translations of SLEEF's
 vector math routines as re-expressed by `sleef-rs` (see below). The algorithms,
 the range reductions, the polynomial coefficients and the Payne–Hanek reduction
 tables originate in SLEEF.
@@ -21,6 +21,13 @@ Upstream file mapping (sleef-rs rev 3671d46 -> this crate):
   src/f64x/u35.rs         -> src/f64x/u35.rs
   src/tables.rs           -> src/tables.rs (verbatim data)
   doubled v0.3.3          -> src/doubled.rs
+  src/f32x.rs             -> src/f32x/mod.rs, src/common.rs, src/constants.rs
+  src/f32x/constants.rs   -> src/f32x/constants.rs, src/constants.rs
+  src/f32x/u05.rs         -> src/f32x/u05.rs
+  src/f32x/u10.rs         -> src/f32x/u10.rs
+  src/f32x/u15.rs         -> src/f32x/u15.rs
+  src/f32x/u35.rs         -> src/f32x/u35.rs
+  src/f32x/fast.rs        -> src/f32x/fast.rs
 
 License (Boost Software License 1.0) — full text in `LICENSE-SLEEF`:
 
