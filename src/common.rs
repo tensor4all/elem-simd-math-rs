@@ -26,6 +26,15 @@ pub type I64s<S> = <S as Simd>::i64s;
 /// Native-width mask for `f64` lanes.
 pub type M64s<S> = <S as Simd>::mask64s;
 
+/// Native-width `f32` vector for SIMD level `S`.
+pub type F32s<S> = <S as Simd>::f32s;
+/// Native-width `u32` vector for SIMD level `S`.
+pub type U32s<S> = <S as Simd>::u32s;
+/// Native-width `i32` vector for SIMD level `S`.
+pub type I32s<S> = <S as Simd>::i32s;
+/// Native-width mask for `f32` lanes.
+pub type M32s<S> = <S as Simd>::mask32s;
+
 use fearless_simd::prelude::*;
 
 /// `x * y + z`, fused wherever the CPU supports it.

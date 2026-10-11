@@ -20,7 +20,7 @@
 //! the operators are implemented on the local [`f64::DD`] type.
 //!
 //! Every function is defined once by the `dd_family!` macro, which is instantiated per element
-//! type, so a future family cannot drift from this one.
+//! type, so the two families cannot drift apart.
 
 macro_rules! dd_family {
     (
@@ -282,4 +282,13 @@ dd_family! {
     bits = u64s,
     mask = 0x_ffff_ffff_f800_0000_u64,
     elem = f64
+}
+
+dd_family! {
+    /// Double-double arithmetic over native-width `f32` vectors.
+    mod f32,
+    vector = f32s,
+    bits = u32s,
+    mask = 0x_ffff_f000_u32,
+    elem = f32
 }
