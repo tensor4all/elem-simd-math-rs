@@ -19,8 +19,8 @@
 //! upstream's method-style extension traits (`MulAsDoubled`, …) become free functions here, and
 //! the operators are implemented on the local [`f64::DD`] type.
 //!
-//! Every function is defined once by the `dd_family!` macro and instantiated for `f64` and `f32`,
-//! so the two families cannot drift apart.
+//! Every function is defined once by the `dd_family!` macro, which is instantiated per element
+//! type, so a future family cannot drift from this one.
 
 macro_rules! dd_family {
     (

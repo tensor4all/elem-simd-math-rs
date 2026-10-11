@@ -35,7 +35,7 @@ impl std::error::Error for LengthMismatch {}
 
 /// Elementwise math over contiguous slices.
 ///
-/// Implemented for `f32` and `f64`. The accuracy tier and error bound of each function are
+/// Implemented for `f64`. The accuracy tier and error bound of each function are
 /// documented on the kernels in [`crate::f64x`]; each method selects the most
 /// accurate tier available for that function. The tier-specific entry points are the `*_u35`
 /// free functions in [`crate::f64`].

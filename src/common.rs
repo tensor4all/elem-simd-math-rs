@@ -1,4 +1,4 @@
-//! Helpers shared by the `f32` and `f64` kernel families.
+//! Type aliases for the `f64` kernel family, and the translation table they follow.
 //!
 //! `sleef-rs` expresses these as extension traits on `Simd<f64, N>`/`Simd<f32, N>`. Extension
 //! traits cannot be implemented for `S::f64s` here (the projection is not a local type, and two
@@ -15,7 +15,6 @@
 //! | `m.select(l, r)` | `m.select(l, r)` |
 //! | `x.to_bits()` / `F64x::from_bits(b)` | `to_bits(x)` / `from_bits(b)` |
 
-use fearless_simd::prelude::*;
 use fearless_simd::Simd;
 
 /// Native-width `f64` vector for SIMD level `S`.
@@ -26,22 +25,3 @@ pub type U64s<S> = <S as Simd>::u64s;
 pub type I64s<S> = <S as Simd>::i64s;
 /// Native-width mask for `f64` lanes.
 pub type M64s<S> = <S as Simd>::mask64s;
-
-/// Selects between two scalars broadcast to vectors.
-#[inline(always)]
-pub fn select_splat<S: Simd, V: SimdFloat<S>>(
-    mask: V::Mask,
-    if_true: V::Element,
-    if_false: V::Element,
-) -> V {
-    mask.select(
-        V::splat(mask_token::<S, V>(mask), if_true),
-        V::splat(mask_token::<S, V>(mask), if_false),
-    )
-}
-
-/// Recovers the SIMD token from a mask.
-#[inline(always)]
-fn mask_token<S: Simd, V: SimdFloat<S>>(_mask: V::Mask) -> S {
-    unimplemented!()
-}
