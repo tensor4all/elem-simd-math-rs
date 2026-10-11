@@ -13,6 +13,7 @@ name = "elem-simd-math"
 version = "0.1.0"
 dependencies = [
  "fearless_simd",
+ "libm",
  "rug",
 ]
 

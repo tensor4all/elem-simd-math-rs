@@ -139,6 +139,22 @@ its source on every one of them (`pow` 1.40x, `erf` 1.92x, `erfc` 2.04x, `tgamma
   the standard library (`erf`, `erfc`, `tgamma`, `lgamma`, `sinpi`, `cospi`, `sincospi`) are only
   available with `simd`.
 
+## Benchmarks in this repository
+
+| what | code | recorded result |
+|---|---|---|
+| kernels against the host's `libm`, with a per-case correctness gate | `benches/throughput.rs` | `docs/benchmark-results.md` |
+| the host's `libm` against the pure-Rust `libm` crate, speed and ULP | `benches/portable_libm.rs` | `docs/portable-libm-results.md` |
+| the protocol both runs follow (baseline, host, statistics, acceptance) | — | `docs/benchmark-protocol.md` |
+
+```bash
+cargo bench -j 16 --bench throughput      # the table above
+cargo bench -j 16 --bench portable_libm   # which libm, and at what cost
+```
+
+Both harnesses are single-threaded, deterministic, and read their inputs from a fixed seed, so
+the tables are reproducible. `ELEM_SIMD_MATH_ULP_ITERS` scales the ULP sampling in the test suite.
+
 ## Testing
 
 ```bash

@@ -17,6 +17,8 @@ fearless_simd = "1.1"
 [dev-dependencies]
 # MPFR oracle for the ULP tests.
 rug = { version = "1.24", default-features = false, features = ["float"] }
+# Pure-Rust libm, used as the portable comparison arm in `benches/portable_libm.rs`.
+libm = "0.2"
 
 [features]
 default = ["simd"]
@@ -29,6 +31,10 @@ bench = false
 
 [[bench]]
 name = "throughput"
+harness = false
+
+[[bench]]
+name = "portable_libm"
 harness = false
 
 # `cargo bench` uses the `bench` profile, which inherits from `release`. Keep it identical to
