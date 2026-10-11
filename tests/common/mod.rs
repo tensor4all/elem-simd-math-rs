@@ -30,6 +30,16 @@ pub fn iterations() -> usize {
         .unwrap_or(1500)
 }
 
+/// A unary slice entry point.
+pub type UnaryOp<T> = fn(&[T], &mut [MaybeUninit<T>]) -> Result<(), LengthMismatch>;
+
+/// A binary slice entry point.
+pub type BinaryOp<T> = fn(&[T], &[T], &mut [MaybeUninit<T>]) -> Result<(), LengthMismatch>;
+
+/// An entry point that writes two outputs.
+pub type PairOp<T> =
+    fn(&[T], &mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) -> Result<(), LengthMismatch>;
+
 /// A scalar type with an ULP metric against an MPFR value.
 pub trait UlpScalar: Copy + 'static {
     /// Distance in ULPs between `d` and the higher-precision `c`, following upstream's definition.
@@ -37,6 +47,9 @@ pub trait UlpScalar: Copy + 'static {
 
     /// The same value widened to `f64`, for the deterministic input generator and diagnostics.
     fn from_f64(x: f64) -> Self;
+
+    /// The largest magnitude a full-range sample uses, so the sample stays finite for this type.
+    const SAMPLE_LIMIT: f64;
 
     /// The MPFR image of this value, at the oracle's working precision.
     fn to_float(self) -> Float;
@@ -49,6 +62,8 @@ pub trait UlpScalar: Copy + 'static {
 }
 
 impl UlpScalar for f64 {
+    const SAMPLE_LIMIT: f64 = 1e306;
+
     fn ulp(d: f64, c: &Float) -> f64 {
         let c2 = c.to_f64();
         if (c2 == 0. || c2.is_subnormal()) && (d == 0. || d.is_subnormal()) {
@@ -88,6 +103,8 @@ impl UlpScalar for f64 {
 }
 
 impl UlpScalar for f32 {
+    const SAMPLE_LIMIT: f64 = 1e38;
+
     fn ulp(d: f32, c: &Float) -> f64 {
         let c2 = c.to_f32();
         if (c2 == 0. || c2.is_subnormal()) && (d == 0. || d.is_subnormal()) {
@@ -147,23 +164,11 @@ impl Rng {
         (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    /// A uniform sample of `[lo, hi]`, with the extreme magnitudes clamped as upstream does, so
-    /// that a full-range sample is not dominated by the largest representable values.
-    pub fn range(&mut self, lo: f64, hi: f64) -> f64 {
-        let lo = if lo == f64::MIN || lo == f32::MIN as f64 {
-            -1e306
-        } else if lo < -1e306 {
-            -1e38
-        } else {
-            lo
-        };
-        let hi = if hi == f64::MAX || hi == f32::MAX as f64 {
-            1e306
-        } else if hi > 1e306 {
-            1e38
-        } else {
-            hi
-        };
+    /// A uniform sample of `[lo, hi]`, clamped to `limit` so that a full-range sample stays finite
+    /// for the element type instead of rounding to infinity.
+    pub fn range(&mut self, lo: f64, hi: f64, limit: f64) -> f64 {
+        let lo = if lo <= -limit { -limit } else { lo };
+        let hi = if hi >= limit { limit } else { hi };
         lo + (hi - lo) * self.unit()
     }
 }
@@ -180,7 +185,9 @@ pub fn read<T: Copy>(out: Vec<MaybeUninit<T>>) -> Vec<T> {
 }
 
 fn input<T: UlpScalar>(rng: &mut Rng, len: usize, lo: f64, hi: f64) -> Vec<T> {
-    (0..len).map(|_| T::from_f64(rng.range(lo, hi))).collect()
+    (0..len)
+        .map(|_| T::from_f64(rng.range(lo, hi, T::SAMPLE_LIMIT)))
+        .collect()
 }
 
 /// Asserts that `got` is within `ulp_max` ULP of the oracle value `want`.
@@ -189,6 +196,7 @@ pub fn assert_close<T: UlpScalar>(
     name: &str,
     it: usize,
     lane: usize,
+    x: T,
     got: T,
     want: &Float,
     ulp_max: f64,
@@ -199,7 +207,8 @@ pub fn assert_close<T: UlpScalar>(
     let ulp = T::ulp(got, want);
     assert!(
         ulp <= ulp_max,
-        "{name}: iter {it}, lane {lane}, got {}, want {want}, {ulp} ULP > {ulp_max}",
+        "{name}: iter {it}, lane {lane}, x={}, got {}, want {want}, {ulp} ULP > {ulp_max}",
+        x.widen(),
         got.widen()
     );
 }
@@ -207,7 +216,7 @@ pub fn assert_close<T: UlpScalar>(
 #[track_caller]
 pub fn check_unary<T: UlpScalar>(
     name: &str,
-    op: fn(&[T], &mut [MaybeUninit<T>]) -> Result<(), LengthMismatch>,
+    op: UnaryOp<T>,
     oracle: fn(Float) -> Float,
     lo: f64,
     hi: f64,
@@ -220,7 +229,7 @@ pub fn check_unary<T: UlpScalar>(
         let mut out: Vec<MaybeUninit<T>> = vec![MaybeUninit::uninit(); len];
         op(&src, &mut out).expect("length check");
         for (lane, (got, &x)) in read(out).iter().zip(src.iter()).enumerate() {
-            assert_close(name, it, lane, *got, &oracle(x.to_float()), ulp_max);
+            assert_close(name, it, lane, x, *got, &oracle(x.to_float()), ulp_max);
         }
     }
 }
@@ -228,7 +237,7 @@ pub fn check_unary<T: UlpScalar>(
 #[allow(clippy::too_many_arguments)]
 pub fn check_binary<T: UlpScalar>(
     name: &str,
-    op: fn(&[T], &[T], &mut [MaybeUninit<T>]) -> Result<(), LengthMismatch>,
+    op: BinaryOp<T>,
     oracle: fn(Float, &Float) -> Float,
     lo1: f64,
     hi1: f64,
@@ -245,14 +254,14 @@ pub fn check_binary<T: UlpScalar>(
         op(&a, &b, &mut out).expect("length check");
         for (lane, ((got, &x), &y)) in read(out).iter().zip(a.iter()).zip(b.iter()).enumerate() {
             let want = oracle(x.to_float(), &y.to_float());
-            assert_close(name, it, lane, *got, &want, ulp_max);
+            assert_close(name, it, lane, x, *got, &want, ulp_max);
         }
     }
 }
 
 pub fn check_pair<T: UlpScalar>(
     name: &str,
-    op: fn(&[T], &mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) -> Result<(), LengthMismatch>,
+    op: PairOp<T>,
     oracle: fn(Float) -> (Float, Float),
     lo: f64,
     hi: f64,
@@ -269,8 +278,8 @@ pub fn check_pair<T: UlpScalar>(
         let second = read(second);
         for lane in 0..len {
             let (want_a, want_b) = oracle(src[lane].to_float());
-            assert_close(name, it, lane, first[lane], &want_a, ulp_max);
-            assert_close(name, it, lane, second[lane], &want_b, ulp_max);
+            assert_close(name, it, lane, src[lane], first[lane], &want_a, ulp_max);
+            assert_close(name, it, lane, src[lane], second[lane], &want_b, ulp_max);
         }
     }
 }

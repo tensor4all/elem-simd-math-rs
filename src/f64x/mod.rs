@@ -426,7 +426,11 @@ pub fn from_slice_offset<S: Simd>(simd: S, table: &[f64], vi: I64s<S>) -> F64s<S
     let idx = vi.to_array();
     let mut values = F64s::<S>::splat(simd, 0.0).to_array();
     for (slot, &i) in values.as_mut().iter_mut().zip(idx.as_ref().iter()) {
-        *slot = table[i as usize];
+        // Upstream reads through an unchecked gather, so an infinite argument, whose exponent
+        // overflows the Payne-Hanek index, reads past the end of the table there. Only the
+        // in-range part is meaningful and the caller masks the result for non-finite arguments,
+        // so clamping keeps the in-domain values untouched.
+        *slot = table[(i as usize).min(table.len() - 1)];
     }
     F64s::<S>::load_array(simd, values)
 }

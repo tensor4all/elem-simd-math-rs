@@ -22,7 +22,8 @@ const WARMUP: usize = 2;
 const ROUNDS: usize = 7;
 
 // Scalars the standard library does not provide, reached through the platform's C library. They
-// are only used as the benchmark's baseline arm.
+// back the baseline arm of the SIMD-only cases, so they are compiled only when those exist.
+#[cfg(feature = "simd")]
 extern "C" {
     fn erf(x: f64) -> f64;
     fn erfc(x: f64) -> f64;
@@ -38,17 +39,22 @@ macro_rules! bench_family {
     (
         $(#[$meta:meta])*
         mod $modname:ident,
-        scalar = $scalar:ty,
-        ops = $ops:path,
+        scalar = $scalar:ty, pi = $pi:expr,
+        ops = $ops:ident,
         erf = $erf:path, erfc = $erfc:path, tgamma = $tgamma:path, lgamma = $lgamma:path,
     ) => {
         $(#[$meta])*
         pub mod $modname {
             use super::*;
 
+            /// The slice entry points for this scalar type, under a fixed name so that one macro
+            /// body can serve both families.
+            use elem_simd_math::$ops as ops;
+
             type Unary = fn(&[$scalar], &mut [MaybeUninit<$scalar>]) -> Result<(), LengthMismatch>;
             type Binary =
                 fn(&[$scalar], &[$scalar], &mut [MaybeUninit<$scalar>]) -> Result<(), LengthMismatch>;
+            #[cfg(feature = "simd")]
             type Pair = fn(
                 &[$scalar],
                 &mut [MaybeUninit<$scalar>],
@@ -69,32 +75,32 @@ macro_rules! bench_family {
 
             fn common() -> &'static [UnaryCase] {
                 &[
-                    UnaryCase { name: "exp", kernel: $ops::exp, scalar: <$scalar>::exp },
-                    UnaryCase { name: "exp2", kernel: $ops::exp2, scalar: <$scalar>::exp2 },
-                    UnaryCase { name: "expm1", kernel: $ops::expm1, scalar: <$scalar>::exp_m1 },
-                    UnaryCase { name: "log", kernel: $ops::log, scalar: <$scalar>::ln },
-                    UnaryCase { name: "log2", kernel: $ops::log2, scalar: <$scalar>::log2 },
-                    UnaryCase { name: "log10", kernel: $ops::log10, scalar: <$scalar>::log10 },
-                    UnaryCase { name: "log1p", kernel: $ops::log1p, scalar: <$scalar>::ln_1p },
-                    UnaryCase { name: "sin", kernel: $ops::sin, scalar: <$scalar>::sin },
-                    UnaryCase { name: "cos", kernel: $ops::cos, scalar: <$scalar>::cos },
-                    UnaryCase { name: "tan", kernel: $ops::tan, scalar: <$scalar>::tan },
-                    UnaryCase { name: "asin", kernel: $ops::asin, scalar: <$scalar>::asin },
-                    UnaryCase { name: "acos", kernel: $ops::acos, scalar: <$scalar>::acos },
-                    UnaryCase { name: "atan", kernel: $ops::atan, scalar: <$scalar>::atan },
-                    UnaryCase { name: "sinh", kernel: $ops::sinh, scalar: <$scalar>::sinh },
-                    UnaryCase { name: "cosh", kernel: $ops::cosh, scalar: <$scalar>::cosh },
-                    UnaryCase { name: "tanh", kernel: $ops::tanh, scalar: <$scalar>::tanh },
-                    UnaryCase { name: "asinh", kernel: $ops::asinh, scalar: <$scalar>::asinh },
-                    UnaryCase { name: "acosh", kernel: $ops::acosh, scalar: <$scalar>::acosh },
-                    UnaryCase { name: "atanh", kernel: $ops::atanh, scalar: <$scalar>::atanh },
-                    UnaryCase { name: "cbrt", kernel: $ops::cbrt, scalar: <$scalar>::cbrt },
-                    UnaryCase { name: "sqrt", kernel: $ops::sqrt, scalar: <$scalar>::sqrt },
-                    UnaryCase { name: "sin (u35)", kernel: $ops::sin_u35, scalar: <$scalar>::sin },
-                    UnaryCase { name: "cos (u35)", kernel: $ops::cos_u35, scalar: <$scalar>::cos },
-                    UnaryCase { name: "tan (u35)", kernel: $ops::tan_u35, scalar: <$scalar>::tan },
-                    UnaryCase { name: "log (u35)", kernel: $ops::log_u35, scalar: <$scalar>::ln },
-                    UnaryCase { name: "tanh (u35)", kernel: $ops::tanh_u35, scalar: <$scalar>::tanh },
+                    UnaryCase { name: "exp", kernel: ops::exp, scalar: <$scalar>::exp },
+                    UnaryCase { name: "exp2", kernel: ops::exp2, scalar: <$scalar>::exp2 },
+                    UnaryCase { name: "expm1", kernel: ops::expm1, scalar: <$scalar>::exp_m1 },
+                    UnaryCase { name: "log", kernel: ops::log, scalar: <$scalar>::ln },
+                    UnaryCase { name: "log2", kernel: ops::log2, scalar: <$scalar>::log2 },
+                    UnaryCase { name: "log10", kernel: ops::log10, scalar: <$scalar>::log10 },
+                    UnaryCase { name: "log1p", kernel: ops::log1p, scalar: <$scalar>::ln_1p },
+                    UnaryCase { name: "sin", kernel: ops::sin, scalar: <$scalar>::sin },
+                    UnaryCase { name: "cos", kernel: ops::cos, scalar: <$scalar>::cos },
+                    UnaryCase { name: "tan", kernel: ops::tan, scalar: <$scalar>::tan },
+                    UnaryCase { name: "asin", kernel: ops::asin, scalar: <$scalar>::asin },
+                    UnaryCase { name: "acos", kernel: ops::acos, scalar: <$scalar>::acos },
+                    UnaryCase { name: "atan", kernel: ops::atan, scalar: <$scalar>::atan },
+                    UnaryCase { name: "sinh", kernel: ops::sinh, scalar: <$scalar>::sinh },
+                    UnaryCase { name: "cosh", kernel: ops::cosh, scalar: <$scalar>::cosh },
+                    UnaryCase { name: "tanh", kernel: ops::tanh, scalar: <$scalar>::tanh },
+                    UnaryCase { name: "asinh", kernel: ops::asinh, scalar: <$scalar>::asinh },
+                    UnaryCase { name: "acosh", kernel: ops::acosh, scalar: <$scalar>::acosh },
+                    UnaryCase { name: "atanh", kernel: ops::atanh, scalar: <$scalar>::atanh },
+                    UnaryCase { name: "cbrt", kernel: ops::cbrt, scalar: <$scalar>::cbrt },
+                    UnaryCase { name: "sqrt", kernel: ops::sqrt, scalar: <$scalar>::sqrt },
+                    UnaryCase { name: "sin (u35)", kernel: ops::sin_u35, scalar: <$scalar>::sin },
+                    UnaryCase { name: "cos (u35)", kernel: ops::cos_u35, scalar: <$scalar>::cos },
+                    UnaryCase { name: "tan (u35)", kernel: ops::tan_u35, scalar: <$scalar>::tan },
+                    UnaryCase { name: "log (u35)", kernel: ops::log_u35, scalar: <$scalar>::ln },
+                    UnaryCase { name: "tanh (u35)", kernel: ops::tanh_u35, scalar: <$scalar>::tanh },
                 ]
             }
 
@@ -103,20 +109,20 @@ macro_rules! bench_family {
             #[cfg(feature = "simd")]
             fn simd_only() -> &'static [UnaryCase] {
                 &[
-                    UnaryCase { name: "exp10", kernel: $ops::exp10, scalar: |v| (10 as $scalar).powf(v) },
-                    UnaryCase { name: "erf", kernel: $ops::erf, scalar: $erf },
-                    UnaryCase { name: "erfc", kernel: $ops::erfc, scalar: $erfc },
-                    UnaryCase { name: "tgamma", kernel: $ops::tgamma, scalar: $tgamma },
-                    UnaryCase { name: "lgamma", kernel: $ops::lgamma, scalar: $lgamma },
+                    UnaryCase { name: "exp10", kernel: ops::exp10, scalar: |v| (10 as $scalar).powf(v) },
+                    UnaryCase { name: "erf", kernel: ops::erf, scalar: $erf },
+                    UnaryCase { name: "erfc", kernel: ops::erfc, scalar: $erfc },
+                    UnaryCase { name: "tgamma", kernel: ops::tgamma, scalar: $tgamma },
+                    UnaryCase { name: "lgamma", kernel: ops::lgamma, scalar: $lgamma },
                     UnaryCase {
                         name: "sinpi",
-                        kernel: $ops::sinpi,
-                        scalar: |v| (v * core::$scalar::consts::PI).sin(),
+                        kernel: ops::sinpi,
+                        scalar: |v| (v * $pi).sin(),
                     },
                     UnaryCase {
                         name: "cospi",
-                        kernel: $ops::cospi,
-                        scalar: |v| (v * core::$scalar::consts::PI).cos(),
+                        kernel: ops::cospi,
+                        scalar: |v| (v * $pi).cos(),
                     },
                 ]
             }
@@ -127,19 +133,23 @@ macro_rules! bench_family {
             }
 
             const BINARY: &[BinaryCase] = &[
-                BinaryCase { name: "pow", kernel: $ops::pow, scalar: <$scalar>::powf },
-                BinaryCase { name: "atan2", kernel: $ops::atan2, scalar: <$scalar>::atan2 },
-                BinaryCase { name: "hypot", kernel: $ops::hypot, scalar: <$scalar>::hypot },
+                BinaryCase { name: "pow", kernel: ops::pow, scalar: <$scalar>::powf },
+                BinaryCase { name: "atan2", kernel: ops::atan2, scalar: <$scalar>::atan2 },
+                BinaryCase { name: "hypot", kernel: ops::hypot, scalar: <$scalar>::hypot },
             ];
 
             fn uninit(len: usize) -> Vec<MaybeUninit<$scalar>> {
                 vec![MaybeUninit::uninit(); len]
             }
 
-            fn read(out: Vec<MaybeUninit<$scalar>>) -> Vec<$scalar> {
-                out.into_iter()
-                    .map(|v| unsafe { v.assume_init() })
-                    .collect()
+            /// Copies the initialized prefix out, borrowing so the buffer stays reusable across
+            /// the cases of one size.
+            fn read(out: &[MaybeUninit<$scalar>]) -> Vec<$scalar> {
+                // SAFETY: every entry point under test writes each element before returning `Ok`,
+                // and every call site checks the returned `Result` first.
+                unsafe {
+                    std::slice::from_raw_parts(out.as_ptr().cast::<$scalar>(), out.len()).to_vec()
+                }
             }
 
             fn median(mut xs: Vec<f64>) -> f64 {
@@ -184,8 +194,8 @@ macro_rules! bench_family {
                         .collect();
                     let exps: Vec<$scalar> = vec![1.5 as $scalar; size];
                     let mut out = uninit(size);
-                    let mut pair_a = uninit(size);
-                    let mut pair_b = uninit(size);
+                    #[cfg(feature = "simd")]
+                    let (mut pair_a, mut pair_b) = (uninit(size), uninit(size));
 
                     if size != PRIMARY {
                         continue;
@@ -215,7 +225,7 @@ macro_rules! bench_family {
                             .collect();
 
                         (case.kernel)(&src, &mut out).expect("lengths match");
-                        let got = read(out);
+                        let got = read(&out);
                         let (mut max_diff, mut max_rel) = (0.0f64, 0.0f64);
                         for (i, &x) in src.iter().enumerate() {
                             let want = (case.scalar)(x);
@@ -256,7 +266,7 @@ macro_rules! bench_family {
                             .collect();
 
                         (case.kernel)(&src, &rhs, &mut out).expect("lengths match");
-                        let got = read(out);
+                        let got = read(&out);
                         let (mut max_diff, mut max_rel) = (0.0f64, 0.0f64);
                         for (i, (&a, &b)) in src.iter().zip(rhs.iter()).enumerate() {
                             let want = (case.scalar)(a, b);
@@ -275,12 +285,12 @@ macro_rules! bench_family {
                     {
                         let _ = &exps;
                         for _ in 0..WARMUP {
-                            $ops::pow(&src, &exps, &mut out).expect("lengths match");
+                            ops::pow(&src, &exps, &mut out).expect("lengths match");
                         }
                         let kt: Vec<f64> = (0..ROUNDS)
                             .map(|_| {
                                 let t = Instant::now();
-                                $ops::pow(black_box(&src), black_box(&exps), &mut out)
+                                ops::pow(black_box(&src), black_box(&exps), &mut out)
                                     .expect("lengths match");
                                 black_box(&out[0]);
                                 t.elapsed().as_secs_f64()
@@ -304,7 +314,7 @@ macro_rules! bench_family {
                     // `sincos` yields two outputs; only its cost is reported.
                     #[cfg(feature = "simd")]
                     {
-                        let pair_cost = |f: Pair| -> f64 {
+                        let mut pair_cost = |f: Pair| -> f64 {
                             median(
                                 (0..ROUNDS)
                                     .map(|_| {
@@ -318,7 +328,7 @@ macro_rules! bench_family {
                             ) / size as f64
                                 * 1e9
                         };
-                        let k = pair_cost($ops::sincos);
+                        let k = pair_cost(ops::sincos);
                         let s = median(
                             (0..ROUNDS)
                                 .map(|_| {
@@ -354,47 +364,55 @@ macro_rules! bench_family {
 bench_family! {
     /// The `f64` family.
     mod f64bench,
-    scalar = f64,
-    ops = elem_simd_math::f64,
+    scalar = f64, pi = core::f64::consts::PI,
+    ops = f64,
     erf = libm_erf, erfc = libm_erfc, tgamma = libm_tgamma, lgamma = libm_lgamma,
 }
 
 bench_family! {
     /// The `f32` family.
     mod f32bench,
-    scalar = f32,
-    ops = elem_simd_math::f32,
+    scalar = f32, pi = core::f32::consts::PI,
+    ops = f32,
     erf = libm_erff, erfc = libm_erfcf, tgamma = libm_tgammaf, lgamma = libm_lgammaf,
 }
 
+#[cfg(feature = "simd")]
 fn libm_erf(x: f64) -> f64 {
     // SAFETY: a pure function of its argument.
     unsafe { erf(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_erfc(x: f64) -> f64 {
     // SAFETY: a pure function of its argument.
     unsafe { erfc(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_tgamma(x: f64) -> f64 {
     // SAFETY: a pure function of its argument.
     unsafe { tgamma(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_lgamma(x: f64) -> f64 {
     // SAFETY: a pure function of its argument.
     unsafe { lgamma(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_erff(x: f32) -> f32 {
     // SAFETY: a pure function of its argument.
     unsafe { erff(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_erfcf(x: f32) -> f32 {
     // SAFETY: a pure function of its argument.
     unsafe { erfcf(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_tgammaf(x: f32) -> f32 {
     // SAFETY: a pure function of its argument.
     unsafe { tgammaf(x) }
 }
+#[cfg(feature = "simd")]
 fn libm_lgammaf(x: f32) -> f32 {
     // SAFETY: a pure function of its argument.
     unsafe { lgammaf(x) }

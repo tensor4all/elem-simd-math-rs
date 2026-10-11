@@ -10,18 +10,20 @@ mod common;
 
 use core::mem::MaybeUninit;
 
-use common::{assert_close, check_binary, check_pair, check_unary, read, PREC};
+use common::{check_binary, check_pair, check_unary, read, PREC};
 use elem_simd_math::{f32 as ops, ElementwiseMath, LengthMismatch};
 use rug::ops::Pow;
 use rug::Float;
 
+/// Working precision for the `*pi` oracles; see `tests/ulp.rs` for why the default is too low.
+const PI_PREC: u32 = 512;
+
 /// `sqrt(f32::MAX)`, the upper bound upstream uses for the inverse hyperbolic ranges.
-const SQRT_FLT_MAX: f32 = 1.844_674_407_370_955_2e19;
+const SQRT_FLT_MAX: f32 = 1.844_674_4e19;
 
 /// `Float::with_val(p, pi) * x`, the oracle the `*pi` functions are checked against.
 fn pi_scaled(x: Float, f: fn(Float) -> Float) -> Float {
-    let p = x.prec();
-    f(x * Float::with_val(p, rug::float::Constant::Pi))
+    f(Float::with_val(PI_PREC, &x) * Float::with_val(PI_PREC, rug::float::Constant::Pi))
 }
 
 fn sinpi_oracle(x: Float) -> Float {
@@ -33,8 +35,8 @@ fn cospi_oracle(x: Float) -> Float {
 }
 
 fn sincospi_oracle(x: Float) -> (Float, Float) {
-    let p = x.prec();
-    (x * Float::with_val(p, rug::float::Constant::Pi)).sin_cos(Float::new(p))
+    (Float::with_val(PI_PREC, &x) * Float::with_val(PI_PREC, rug::float::Constant::Pi))
+        .sin_cos(Float::new(PI_PREC))
 }
 
 fn atan2_oracle(y: Float, x: &Float) -> Float {

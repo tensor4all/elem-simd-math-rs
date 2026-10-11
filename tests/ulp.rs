@@ -18,14 +18,21 @@ use rug::Float;
 /// `sqrt(f64::MAX)`, the upper bound upstream uses for the inverse hyperbolic ranges.
 const SQRT_DBL_MAX: f64 = 1.340_780_792_994_259_7e+154;
 
+/// Working precision for the `*pi` oracles.
+///
+/// `sin(x * pi)` is only as accurate as the fractional part of the product, and near a zero the
+/// product loses one bit per bit of `|x|`: at the default 128 bits a half-integer `x` around `2^21`
+/// leaves the answer about `x * 2^-128` away from the true zero, which is far outside the asserted
+/// sub-ULP bound. The inputs themselves are exact in every precision, so raising the working
+/// precision is enough.
+const PI_PREC: u32 = 512;
+
 fn sinpi_oracle(x: Float) -> Float {
-    let p = x.prec();
-    (x * Float::with_val(p, rug::float::Constant::Pi)).sin()
+    (Float::with_val(PI_PREC, &x) * Float::with_val(PI_PREC, rug::float::Constant::Pi)).sin()
 }
 
 fn cospi_oracle(x: Float) -> Float {
-    let p = x.prec();
-    (x * Float::with_val(p, rug::float::Constant::Pi)).cos()
+    (Float::with_val(PI_PREC, &x) * Float::with_val(PI_PREC, rug::float::Constant::Pi)).cos()
 }
 
 // ---------------------------------------------------------------- unary ----------
@@ -281,8 +288,8 @@ fn sincospi_ulp() {
         "sincospi",
         ops::sincospi,
         |x: Float| {
-            let p = x.prec();
-            (x * Float::with_val(p, rug::float::Constant::Pi)).sin_cos(Float::new(p))
+            (Float::with_val(PI_PREC, &x) * Float::with_val(PI_PREC, rug::float::Constant::Pi))
+                .sin_cos(Float::new(PI_PREC))
         },
         -max,
         max,
@@ -364,7 +371,7 @@ fn special_values() {
     let got = read(out);
     for (i, &x) in cases.iter().enumerate() {
         let want = Float::with_val(PREC, x).exp();
-        assert_close("exp special", 0, i, got[i], &want, 1.0);
+        assert_close("exp special", 0, i, x, got[i], &want, 1.0);
     }
 
     let mut out = vec![MaybeUninit::uninit(); cases.len()];
@@ -375,7 +382,7 @@ fn special_values() {
         if want.is_nan() {
             assert!(got[i].is_nan(), "log({x:e}) = {}", got[i]);
         } else {
-            assert_close("log special", 0, i, got[i], &want, 3.5);
+            assert_close("log special", 0, i, x, got[i], &want, 3.5);
         }
     }
 

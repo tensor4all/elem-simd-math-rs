@@ -42,58 +42,106 @@ double-double layer is built only from split-based formulas and uses no fused op
 
 ## Scope
 
-`f64` only for now. The kernels, the shared helper layer and the double-double layer are written so
-that an `f32` family can be added alongside them without relayout: see the "Remaining work" section
-of `HANDOFF.md`.
+`f64` and `f32`, over the whole elementwise analytic surface that SLEEF's `u05`/`u10`/`u15`/`u35`
+tiers cover. `f32` needed no separate integration: the kernels, the shared helper layer and the
+double-double layer are generic over the vector type, so `src/f32x` mirrors `src/f64x` and a single
+macro generates both slice APIs.
 
 ## Accuracy and speed
 
 Every kernel carries the error bound of the SLEEF accuracy tier it came from (`u05` = 0.5 ULP,
-`u10` = 1.0 ULP, `u15` = 1.5 ULP, `u35` = 3.5 ULP), and the ULP suite in `tests/ulp.rs` asserts
-that bound against MPFR. The table below is the recorded run of `cargo bench`
-(`docs/benchmark-results.md`): `n = 2^23` elements, one thread, `Avx2` (four `f64` lanes), baseline
-= the platform's `libm` called one element at a time from the same binary. ★ marks the rows of
-`tensor4all/tenferro-rs#2033`.
+`u10` = 1.0 ULP, `u15` = 1.5 ULP, `u35` = 3.5 ULP), and the ULP suites assert that bound against
+MPFR — `tests/ulp.rs` for `f64` and `tests/ulp32.rs` for `f32` — using the same bounds upstream
+asserts for the same functions. The two tables below are the recorded run of
+`cargo bench` (`docs/benchmark-results.md`): `n = 2^23` elements, one thread, `Avx2`, so four `f64`
+lanes and eight `f32` lanes. The baseline is the platform's `libm` called one element at a time
+from the same binary, and ★ marks the rows of `tensor4all/tenferro-rs#2033`.
+
+### `f64`, 4 lanes
 
 | function | ns/elem (libm) | ns/elem (kernel) | speedup | bound | #2033 |
 |---|---:|---:|---:|---:|:--:|
-| `sin (u35)` | 8.60 | 1.70 | **5.06x** | 3.5 ULP |  |
-| `exp10` | 12.35 | 2.45 | **5.04x** | 1.09 ULP |  |
-| `tanh (u35)` | 13.04 | 2.91 | **4.48x** | 3.5 ULP |  |
-| `cos (u35)` | 8.72 | 2.09 | **4.17x** | 3.5 ULP |  |
-| `sin` | 8.55 | 2.61 | **3.27x** | 1.0 ULP | ★ |
-| `sincos` | 12.19 | 3.74 | **3.26x** | 1.0 ULP |  |
-| `cos` | 8.69 | 2.97 | **2.93x** | 1.0 ULP | ★ |
-| `tan` | 10.52 | 3.69 | **2.85x** | 1.0 ULP |  |
-| `sinh` | 13.52 | 4.76 | **2.84x** | 1.0 ULP |  |
-| `cbrt` | 17.99 | 6.36 | **2.83x** | 1.0 ULP |  |
-| `log (u35)` | 5.12 | 1.81 | **2.83x** | 3.5 ULP |  |
-| `log1p` | 7.84 | 2.82 | **2.78x** | 1.0 ULP | ★ |
-| `atan2` | 15.05 | 5.66 | **2.66x** | 1.0 ULP |  |
-| `log10` | 7.93 | 3.03 | **2.62x** | 1.0 ULP |  |
-| `tanh` | 13.07 | 5.40 | **2.42x** | 1.0 ULP | ★ |
-| `exp` | 5.25 | 2.20 | **2.39x** | 1.0 ULP | ★ |
-| `atan` | 8.43 | 3.66 | **2.30x** | 1.0 ULP |  |
-| `asin` | 6.59 | 2.95 | **2.23x** | 1.0 ULP |  |
-| `cospi` | 9.38 | 4.30 | **2.18x** | 0.506 ULP |  |
-| `sqrt` | 2.46 | 1.19 | **2.07x** | 0.5001 ULP |  |
-| `sinpi` | 9.16 | 4.47 | **2.05x** | 0.506 ULP |  |
-| `acos` | 6.60 | 3.27 | **2.02x** | 1.0 ULP |  |
-| `exp2` | 3.79 | 1.96 | **1.94x** | 1.0 ULP |  |
-| `log` | 5.18 | 2.67 | **1.94x** | 1.0 ULP | ★ |
-| `hypot` | 6.54 | 3.51 | **1.86x** | 0.5001 ULP |  |
-| `expm1` | 7.68 | 4.29 | **1.79x** | 1.0 ULP | ★ |
-| `cosh` | 7.94 | 4.67 | **1.70x** | 1.0 ULP |  |
-| `atanh` | 8.68 | 5.23 | **1.66x** | 1.0 ULP |  |
-| `log2` | 4.41 | 2.83 | **1.56x** | 1.0 ULP |  |
-| `asinh` | 12.37 | 9.97 | **1.24x** | 1.0 ULP |  |
-| `tgamma` | 40.09 | 32.59 | **1.23x** | 1.0 ULP |  |
-| `erf` | 8.91 | 8.91 | **1.00x** | 1.0 ULP |  |
-| `acosh` | 7.34 | 8.34 | **0.88x** | 1.0 ULP |  |
-| `pow` | 12.67 | 16.24 | **0.78x** | 1.0 ULP | ★ |
-| `erfc` | 9.71 | 14.49 | **0.67x** | 2.5 ULP |  |
-| `lgamma` | 20.79 | 33.54 | **0.62x** | 1.0 ULP |  |
+| `exp10` | 11.92 | 2.30 | **5.19x** | 1.09 ULP |  |
+| `sin (u35)` | 8.53 | 1.65 | **5.17x** | 3.5 ULP |  |
+| `sincos` | 18.10 | 3.63 | **4.98x** | 1.0 ULP |  |
+| `cos (u35)` | 8.68 | 1.90 | **4.57x** | 3.5 ULP |  |
+| `tanh (u35)` | 12.96 | 2.88 | **4.50x** | 3.5 ULP |  |
+| `tan (u35)` | 10.26 | 2.39 | **4.30x** | 3.5 ULP |  |
+| `sin` | 8.52 | 2.59 | **3.29x** | 1.0 ULP | ★ |
+| `cos` | 8.66 | 2.95 | **2.93x** | 1.0 ULP | ★ |
+| `log10` | 7.81 | 2.68 | **2.92x** | 1.0 ULP |  |
+| `atan2` | 15.32 | 5.32 | **2.88x** | 1.0 ULP |  |
+| `log (u35)` | 5.07 | 1.76 | **2.87x** | 3.5 ULP |  |
+| `sinh` | 13.26 | 4.68 | **2.84x** | 1.0 ULP |  |
+| `tan` | 10.26 | 3.62 | **2.83x** | 1.0 ULP |  |
+| `log1p` | 7.59 | 2.76 | **2.75x** | 1.0 ULP | ★ |
+| `cbrt` | 16.59 | 6.26 | **2.65x** | 1.0 ULP |  |
+| `exp` | 5.21 | 2.13 | **2.44x** | 1.0 ULP | ★ |
+| `asin` | 6.50 | 2.67 | **2.43x** | 1.0 ULP |  |
+| `tanh` | 12.96 | 5.33 | **2.43x** | 1.0 ULP | ★ |
+| `atan` | 8.40 | 3.55 | **2.37x** | 1.0 ULP |  |
+| `cospi` | 9.18 | 4.29 | **2.14x** | 0.506 ULP |  |
+| `sqrt` | 2.48 | 1.18 | **2.10x** | 0.5001 ULP |  |
+| `sinpi` | 9.08 | 4.47 | **2.03x** | 0.506 ULP |  |
+| `acos` | 6.51 | 3.24 | **2.01x** | 1.0 ULP |  |
+| `exp2` | 3.62 | 1.83 | **1.98x** | 1.0 ULP |  |
+| `log` | 5.05 | 2.64 | **1.91x** | 1.0 ULP | ★ |
+| `hypot` | 6.56 | 3.59 | **1.83x** | 0.5001 ULP |  |
+| `expm1` | 7.60 | 4.26 | **1.78x** | 1.0 ULP | ★ |
+| `cosh` | 7.65 | 4.60 | **1.66x** | 1.0 ULP |  |
+| `atanh` | 8.49 | 5.11 | **1.66x** | 1.0 ULP |  |
+| `log2` | 4.27 | 2.78 | **1.53x** | 1.0 ULP |  |
+| `tgamma` | 40.21 | 32.29 | **1.25x** | 1.0 ULP |  |
+| `asinh` | 12.20 | 9.92 | **1.23x** | 1.0 ULP |  |
+| `erf` | 8.84 | 8.83 | **1.00x** | 1.0 ULP |  |
+| `acosh` | 7.25 | 8.25 | **0.88x** | 1.0 ULP |  |
+| `pow` | 12.22 | 16.28 | **0.75x** | 1.0 ULP | ★ |
+| `pow(x,1.5)` | 11.52 | 16.18 | **0.71x** | 1.0 ULP |  |
+| `erfc` | 9.55 | 14.18 | **0.67x** | 2.5 ULP |  |
+| `lgamma` | 20.70 | 33.76 | **0.61x** | 1.0 ULP |  |
 
+### `f32`, 8 lanes
+
+| function | ns/elem (libm) | ns/elem (kernel) | speedup | bound |
+|---|---:|---:|---:|---:|
+| `tan (u35)` | 11.57 | 0.62 | **18.67x** | 3.5 ULP |
+| `tanh (u35)` | 13.84 | 0.90 | **15.32x** | 3.5 ULP |
+| `cos (u35)` | 4.18 | 0.54 | **7.74x** | 3.5 ULP |
+| `sinh` | 14.64 | 2.07 | **7.06x** | 1.0 ULP |
+| `asin` | 7.19 | 1.02 | **7.04x** | 1.0 ULP |
+| `sin (u35)` | 3.19 | 0.47 | **6.83x** | 3.5 ULP |
+| `tan` | 11.57 | 1.78 | **6.49x** | 1.0 ULP |
+| `log10` | 7.57 | 1.18 | **6.40x** | 1.0 ULP |
+| `log1p` | 7.41 | 1.20 | **6.16x** | 1.0 ULP |
+| `tanh` | 13.83 | 2.38 | **5.81x** | 1.0001 ULP |
+| `exp2` | 3.00 | 0.56 | **5.32x** | 1.0 ULP |
+| `exp10` | 5.11 | 0.97 | **5.29x** | 1.0 ULP |
+| `exp` | 3.01 | 0.57 | **5.27x** | 1.0 ULP |
+| `acos` | 6.81 | 1.30 | **5.25x** | 1.0 ULP |
+| `log (u35)` | 3.22 | 0.67 | **4.78x** | 3.5 ULP |
+| `atan2` | 11.92 | 2.64 | **4.52x** | 1.0 ULP |
+| `expm1` | 8.38 | 1.90 | **4.41x** | 1.0 ULP |
+| `sincos` | 6.26 | 1.45 | **4.31x** | 1.0 ULP |
+| `cosh` | 8.24 | 1.93 | **4.28x** | 1.0 ULP |
+| `atan` | 5.97 | 1.50 | **3.97x** | 1.0 ULP |
+| `sqrt` | 1.40 | 0.36 | **3.93x** | 0.5 ULP |
+| `atanh` | 7.87 | 2.12 | **3.72x** | 1.0001 ULP |
+| `tgamma` | 32.61 | 9.34 | **3.49x** | 1.0 ULP |
+| `log` | 3.95 | 1.15 | **3.45x** | 1.0 ULP |
+| `log2` | 3.97 | 1.24 | **3.21x** | 1.0 ULP |
+| `asinh` | 11.95 | 3.95 | **3.02x** | 1.0 ULP |
+| `cospi` | 4.39 | 1.47 | **2.99x** | 0.506 ULP |
+| `sinpi` | 4.16 | 1.49 | **2.80x** | 0.506 ULP |
+| `sin` | 3.19 | 1.18 | **2.72x** | 1.0 ULP |
+| `cos` | 3.39 | 1.38 | **2.45x** | 1.0 ULP |
+| `erf` | 8.86 | 3.69 | **2.40x** | 0.75 ULP |
+| `acosh` | 7.83 | 3.39 | **2.31x** | 1.0 ULP |
+| `hypot` | 3.58 | 1.68 | **2.13x** | 0.5 ULP |
+| `erfc` | 9.49 | 4.99 | **1.90x** | 1.5 ULP |
+| `cbrt` | 4.95 | 2.75 | **1.80x** | 1.0 ULP |
+| `lgamma` | 15.88 | 9.73 | **1.63x** | 1.0 ULP |
+| `pow` | 5.77 | 5.13 | **1.13x** | 1.0 ULP |
+| `pow(x,1.5)` | 5.28 | 5.04 | **1.05x** | 1.0 ULP |
 `ns/elem` is a time, so smaller is faster; `speedup` is `libm / kernel`, so **larger is faster**.
 `1.00x` means the kernel ties with the platform's `libm`.
 
