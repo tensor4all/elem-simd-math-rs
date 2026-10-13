@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 license = "(MIT OR Apache-2.0) AND BSL-1.0"
-authors = ["Satoshi Terasaki", "Hiroshi Shinaoka"]
 repository = "https://github.com/tensor4all/elem-simd-math-rs"
 description = "Vectorized elementwise math kernels for f32/f64 over stable-Rust SIMD (port of SLEEF via sleef-rs, on fearless_simd)."
 keywords = ["simd", "math", "libm", "sleef"]
