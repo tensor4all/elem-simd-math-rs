@@ -36,10 +36,16 @@ harness = false
 name = "portable_libm"
 harness = false
 
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0
+
 # `cargo bench` uses the `bench` profile, which inherits from `release`. Keep it identical to
 # `release` so that the benchmark measures the same code the release build produces.
 [profile.release]
-debug = "line-tables-only"
+debug = 0
 
 [profile.bench]
-debug = "line-tables-only"
+debug = 0
