@@ -8,6 +8,7 @@
 //! cannot be inferred from a call; passing the token first makes every call site inferrable
 //! without a turbofish.
 
+pub mod activation;
 pub mod constants;
 pub mod fast;
 pub mod u05;
