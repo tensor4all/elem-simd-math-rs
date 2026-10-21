@@ -563,3 +563,118 @@ fn special_values() {
     assert!(got[0].is_sign_negative(), "expm1(-0.0) lost its sign");
     assert!(got[1].is_sign_positive(), "expm1(+0.0) lost its sign");
 }
+
+// ------------------------------------------------------------ activations ----------
+
+fn sigmoid_oracle(x: Float) -> Float {
+    let one = Float::with_val(PREC, 1);
+    one.clone() / (one + (-x).exp())
+}
+
+fn silu_oracle(x: Float) -> Float {
+    x.clone() * sigmoid_oracle(x)
+}
+
+fn softplus_oracle(x: Float) -> Float {
+    x.exp().ln_1p()
+}
+
+fn gelu_oracle(x: Float) -> Float {
+    let half = Float::with_val(PREC, 0.5);
+    let z = x.clone() / Float::with_val(PREC, 2).sqrt();
+    half * x * (Float::with_val(PREC, 1) + z.erf())
+}
+
+fn gelu_tanh_oracle(x: Float) -> Float {
+    let half = Float::with_val(PREC, 0.5);
+    let scale = (Float::with_val(PREC, 2) / Float::with_val(PREC, rug::float::Constant::Pi)).sqrt();
+    let cubic = Float::with_val(PREC, 0.044715) * x.clone() * x.clone() * x.clone();
+    half * x.clone() * (Float::with_val(PREC, 1) + (scale * (x + cubic)).tanh())
+}
+
+#[test]
+fn sigmoid_ulp() {
+    check_unary("sigmoid", ops::sigmoid, sigmoid_oracle, -100.0, 100.0, 2.5);
+}
+
+#[test]
+fn silu_ulp() {
+    // `exp(-|x|)` is normal above `-87`; below, the subnormal exponential sets the error.
+    check_unary("silu", ops::silu, silu_oracle, -87.0, 100.0, 3.5);
+}
+
+#[test]
+fn softplus_ulp() {
+    check_unary(
+        "softplus",
+        ops::softplus,
+        softplus_oracle,
+        -100.0,
+        100.0,
+        3.0,
+    );
+}
+
+/// Away from the `1 + tanh` cancellation (`x >= 0`) the bound is a few ULP.
+#[test]
+fn gelu_tanh_ulp() {
+    check_unary(
+        "gelu_tanh",
+        ops::gelu_tanh,
+        gelu_tanh_oracle,
+        0.0,
+        10.0,
+        3.0,
+    );
+}
+
+/// `gelu` on `f32` uses the Abramowitz–Stegun `erf` (absolute error at most
+/// `1.5e-7` before rounding, about `5e-7` after the `f32` evaluation), so its
+/// contract is an absolute one: `3.0e-7 * |x|` plus three ULP of the result.
+#[test]
+fn gelu_absolute_error() {
+    let mut rng = common::Rng::new(0x1234_5678_9abc_def1);
+    for it in 0..common::iterations() {
+        let len = common::LENS[it % common::LENS.len()];
+        let src: Vec<f32> = (0..len)
+            .map(|_| rng.range(-10.0, 10.0, f64::MAX) as f32)
+            .collect();
+        let mut out: Vec<MaybeUninit<f32>> = vec![MaybeUninit::uninit(); len];
+        ops::gelu(&src, &mut out).expect("length check");
+        for (got, &x) in read(out).iter().zip(src.iter()) {
+            let want = gelu_oracle(Float::with_val(PREC, x)).to_f64();
+            let bound = 1.0e-7 * (x as f64).abs()
+                + 3.0 * (f32::EPSILON as f64) * want.abs().max(f32::MIN_POSITIVE as f64);
+            assert!(
+                ((*got as f64) - want).abs() <= bound,
+                "gelu: iter {it}, x={x}, got {got}, want {want}, bound {bound:e}"
+            );
+        }
+    }
+}
+
+/// The far negative tail stays subnormal instead of flushing to zero: the
+/// overflow-free form evaluates `exp(-|x|)` directly. The subnormal result has
+/// few bits, so the check is in units of the smallest subnormal step.
+#[test]
+fn sigmoid_and_softplus_keep_their_subnormal_tail() {
+    let src = [-100.0f32, -95.0, -90.0];
+    for (name, op) in [
+        ("sigmoid", ops::sigmoid as UnaryOp32),
+        ("softplus", ops::softplus),
+    ] {
+        let mut out: Vec<MaybeUninit<f32>> = vec![MaybeUninit::uninit(); src.len()];
+        op(&src, &mut out).expect("length check");
+        for (got, &x) in read(out).iter().zip(src.iter()) {
+            let want = Float::with_val(PREC, x).exp().to_f64();
+            assert!(*got > 0.0, "{name}({x}) flushed to zero");
+            let steps = ((*got as f64) - want).abs() / f64::from(f32::from_bits(1));
+            assert!(
+                steps <= 2.0,
+                "{name}({x}): got {got}, want {want}, {steps} subnormal steps"
+            );
+        }
+    }
+}
+
+type UnaryOp32 = fn(&[f32], &mut [MaybeUninit<f32>]) -> Result<(), LengthMismatch>;

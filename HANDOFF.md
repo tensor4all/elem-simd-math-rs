@@ -260,3 +260,28 @@ this repository, since pulling `sleef-rs` in as a dev-dependency would drag in a
 `portable_simd` build.
 
 ## Remaining work
+
+## Fused activations (2026-10-21, tenferro-rs#2233)
+
+`sigmoid`, `silu`, `softplus`, `gelu` and `gelu_tanh` as one-pass vector kernels
+(`src/f32x/activation.rs`, `src/f64x/activation.rs`), composed from the tier
+kernels the way PyTorch's CPU `Vectorized<float>` activations are. Motivation:
+tenferro's composite formulation (seven materialized passes) ran sigmoid at
+172 us and gelu at 333 us for 1024x64 `f32` where PyTorch takes 49 / 61 us; the
+fused kernels bring tenferro to 44 / 65 us.
+
+- Formulas are the overflow-free ones (`exp(-|x|)` only); the far negative tail
+  stays subnormal instead of flushing (asserted by `*_keep_their_subnormal_tail`).
+- Bounds are stated per function and are not SLEEF tiers: `sigmoid` 2.5 ULP,
+  `silu` 3.5 ULP (normal results), `softplus` 3.0 ULP, `gelu_tanh` and the
+  `f64` `gelu` 3.0 ULP for `x >= 0`. The `f32` `gelu` uses the
+  Abramowitz–Stegun 7.1.26 `erf` that PyTorch's CPU GELU uses (about `5e-7`
+  absolute on `erf` after `f32` rounding), so its contract is
+  `3.0e-7 * |x|` plus 3 ULP. For `x < 0` the `1 + erf` / `1 + tanh`
+  cancellation sets the relative error of both GELU forms.
+- Measured on an mpmath oracle over 2^18 samples per kernel and dtype before
+  the bounds were set: `f32` sigmoid 2.25, silu 3.28, softplus 1.84 ULP;
+  `f64` sigmoid 1.91, silu 2.80, softplus 1.32 ULP; `f32` gelu at 0.60 of its
+  bound. The MPFR suites in `tests/` assert the bounds in CI.
+- Throughput at 2^16 elements, one core: `f32` sigmoid 0.63 ns/elem, silu
+  0.67, softplus 2.4, gelu 0.97, gelu_tanh 2.85; `f64` sigmoid 1.84, gelu 5.9.

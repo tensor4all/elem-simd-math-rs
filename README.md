@@ -50,6 +50,17 @@ tiers cover. `f32` needed no separate integration: the kernels, the shared helpe
 double-double layer are generic over the vector type, so `src/f32x` mirrors `src/f64x` and a single
 macro generates both slice APIs.
 
+On top of the analytic surface, `sigmoid`, `silu`, `softplus`, `gelu` and `gelu_tanh` are fused
+activation kernels: one vector pass each, composed from the tier kernels the way PyTorch's CPU
+`Vectorized` activations are, so a consumer gets the activation without materializing `exp`, `erf`
+or `tanh`. Their bounds follow from the kernel inside plus the surrounding roundings and are stated
+per function (`sigmoid` 2.5 ULP, `silu` 3.5 ULP wherever `exp(-|x|)` is normal, `softplus`
+3.0 ULP, `gelu_tanh` 3.0 ULP for `x >= 0`). The `f32` `gelu` evaluates `erf` as PyTorch's CPU
+GELU does, with the Abramowitz–Stegun 7.1.26 approximation, and carries an absolute bound of
+`3.0e-7 * |x|` plus 3 ULP instead; the `f64`
+`gelu` uses the 1.0 ULP `erf`. For `x < 0` the `1 + erf` / `1 + tanh` cancellation sets the
+relative error of both GELU forms, exactly as in a composite evaluation.
+
 ## Accuracy and speed
 
 Every kernel carries the error bound of the SLEEF accuracy tier it came from (`u05` = 0.5 ULP,

@@ -565,6 +565,34 @@ pub mod $modname {
         Ok(())
     }
 
+    unary! {
+        sigmoid, xkernels::activation::sigmoid,
+            |v: $ty| { let e = (-v.abs()).exp(); if v > 0.0 { 1.0 / (1.0 + e) } else { e / (1.0 + e) } },
+            "Logistic sigmoid `1 / (1 + exp(-x))` in one pass, overflow-free; 2.5 ULP.";
+        silu, xkernels::activation::silu,
+            |v: $ty| { let e = (-v.abs()).exp(); v * if v > 0.0 { 1.0 / (1.0 + e) } else { e / (1.0 + e) } },
+            "SiLU / swish `x * sigmoid(x)` in one pass; 3.5 ULP wherever `exp(-|x|)` is normal (see the kernel for the subnormal tail).";
+        softplus, xkernels::activation::softplus, |v: $ty| v.max(0.0) + (-v.abs()).exp().ln_1p(),
+            "Softplus `log(1 + exp(x))` in one pass, overflow-free; 3.0 ULP.";
+        gelu_tanh, xkernels::activation::gelu_tanh,
+            |v: $ty| 0.5 * v * (1.0 + ((0.797_884_560_802_865_4 as $ty) * (v + (0.044_715 as $ty) * v * v * v)).tanh()),
+            "GELU tanh approximation `x/2 * (1 + tanh(sqrt(2/pi) * (x + 0.044715 x^3)))` in one pass; 3.0 ULP for `x >= 0`, see the kernel for `x < 0`.";
+    }
+
+    /// Exact-form GELU `x/2 * (1 + erf(x / sqrt(2)))` in one pass. See the kernel
+    /// ([`crate::f32x::activation::gelu`] / [`crate::f64x::activation::gelu`]) for
+    /// the error bound: the `f32` kernel evaluates `erf` as PyTorch's CPU GELU does
+    /// (absolute error about `5e-7` on `erf` after rounding, so `3.0e-7 * |x|` plus
+    /// 3 ULP on the result), the `f64` kernel uses the 1.0 ULP `erf`.
+    #[cfg(feature = "simd")]
+    #[inline]
+    pub fn gelu(src: &[$ty], dst: &mut [MaybeUninit<$ty>]) -> Result<(), LengthMismatch> {
+        lengths(src.len(), dst.len())?;
+        let level = fearless_simd::Level::new();
+        fearless_simd::dispatch!(level, simd => run(simd, xkernels::activation::gelu, src, dst));
+        Ok(())
+    }
+
     /// Error function; 1.0 ULP.
     #[cfg(feature = "simd")]
     #[inline]

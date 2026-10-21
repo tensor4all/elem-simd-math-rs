@@ -400,3 +400,98 @@ fn special_values() {
     assert!(got[0].is_sign_negative(), "expm1(-0.0) lost its sign");
     assert!(got[1].is_sign_positive(), "expm1(+0.0) lost its sign");
 }
+
+// ------------------------------------------------------------ activations ----------
+
+fn sigmoid_oracle(x: Float) -> Float {
+    let one = Float::with_val(PREC, 1);
+    one.clone() / (one + (-x).exp())
+}
+
+fn silu_oracle(x: Float) -> Float {
+    x.clone() * sigmoid_oracle(x)
+}
+
+fn softplus_oracle(x: Float) -> Float {
+    x.exp().ln_1p()
+}
+
+fn gelu_oracle(x: Float) -> Float {
+    let half = Float::with_val(PREC, 0.5);
+    let z = x.clone() / Float::with_val(PREC, 2).sqrt();
+    half * x * (Float::with_val(PREC, 1) + z.erf())
+}
+
+fn gelu_tanh_oracle(x: Float) -> Float {
+    let half = Float::with_val(PREC, 0.5);
+    let scale = (Float::with_val(PREC, 2) / Float::with_val(PREC, rug::float::Constant::Pi)).sqrt();
+    let cubic = Float::with_val(PREC, 0.044715) * x.clone() * x.clone() * x.clone();
+    half * x.clone() * (Float::with_val(PREC, 1) + (scale * (x + cubic)).tanh())
+}
+
+#[test]
+fn sigmoid_ulp() {
+    check_unary("sigmoid", ops::sigmoid, sigmoid_oracle, -700.0, 700.0, 2.5);
+}
+
+#[test]
+fn silu_ulp() {
+    check_unary("silu", ops::silu, silu_oracle, -700.0, 700.0, 3.5);
+}
+
+#[test]
+fn softplus_ulp() {
+    check_unary(
+        "softplus",
+        ops::softplus,
+        softplus_oracle,
+        -700.0,
+        700.0,
+        3.0,
+    );
+}
+
+/// Away from the `1 + tanh` cancellation (`x >= 0`) the bound is a few ULP.
+#[test]
+fn gelu_tanh_ulp() {
+    check_unary(
+        "gelu_tanh",
+        ops::gelu_tanh,
+        gelu_tanh_oracle,
+        0.0,
+        10.0,
+        3.0,
+    );
+}
+
+/// The `f64` `gelu` uses the 1.0 ULP `erf`; away from the cancellation the
+/// bound is a few ULP.
+#[test]
+fn gelu_ulp() {
+    check_unary("gelu", ops::gelu, gelu_oracle, 0.0, 10.0, 3.0);
+}
+
+/// The far negative tail stays subnormal instead of flushing to zero; the check
+/// is in units of the smallest subnormal step.
+#[test]
+fn sigmoid_and_softplus_keep_their_subnormal_tail() {
+    let src = [-740.0f64, -730.0, -720.0];
+    for (name, op) in [
+        ("sigmoid", ops::sigmoid as UnaryOp64),
+        ("softplus", ops::softplus),
+    ] {
+        let mut out: Vec<MaybeUninit<f64>> = vec![MaybeUninit::uninit(); src.len()];
+        op(&src, &mut out).expect("length check");
+        for (got, &x) in read(out).iter().zip(src.iter()) {
+            let want = Float::with_val(PREC, x).exp().to_f64();
+            assert!(*got > 0.0, "{name}({x}) flushed to zero");
+            let steps = (*got - want).abs() / f64::from_bits(1);
+            assert!(
+                steps <= 2.0,
+                "{name}({x}): got {got}, want {want}, {steps} subnormal steps"
+            );
+        }
+    }
+}
+
+type UnaryOp64 = fn(&[f64], &mut [MaybeUninit<f64>]) -> Result<(), LengthMismatch>;
