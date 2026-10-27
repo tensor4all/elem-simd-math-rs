@@ -10,7 +10,7 @@ mod common;
 
 use core::mem::MaybeUninit;
 
-use common::{assert_close, check_binary, check_pair, check_unary, read, PREC};
+use common::{assert_close, check_binary, check_pair, check_unary, read, LENS, PREC};
 use elem_simd_math::{f64 as ops, ElementwiseMath, LengthMismatch};
 use rug::ops::Pow;
 use rug::Float;
@@ -210,6 +210,42 @@ fn cospi_ulp() {
 #[test]
 fn sqrt_ulp() {
     check_unary("sqrt", ops::sqrt, Float::sqrt, 0.0, f64::MAX, 0.50001);
+}
+
+/// `sqrt` is the hardware instruction, so the slice path has to reproduce `f64::sqrt` bit for bit,
+/// including the values `sqrt_ulp` never samples: `-0.0`, negatives, subnormals, the extremes and
+/// the non-finite values.
+#[test]
+fn sqrt_bit_identical_to_scalar() {
+    const SPECIALS: [f64; 14] = [
+        -0.0,
+        0.0,
+        -1.0,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NAN,
+        f64::from_bits(0x7ff8_0000_0000_0001),
+        1.0,
+        2.0,
+        f64::EPSILON,
+        f64::MIN_POSITIVE,
+        f64::MIN_POSITIVE / 2.0,
+        f64::from_bits(1),
+        f64::MAX,
+    ];
+    for len in LENS {
+        let src: Vec<f64> = (0..len).map(|i| SPECIALS[i % SPECIALS.len()]).collect();
+        let mut out: Vec<MaybeUninit<f64>> = vec![MaybeUninit::uninit(); len];
+        ops::sqrt(&src, &mut out).expect("length check");
+        for (lane, (got, &x)) in read(out).iter().zip(src.iter()).enumerate() {
+            let want = x.sqrt();
+            assert!(
+                got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()),
+                "sqrt: len {len}, lane {lane}, x={x:e}, got {}, want {want}",
+                got.to_bits()
+            );
+        }
+    }
 }
 
 // --------------------------------------------------------------- binary ----------

@@ -60,6 +60,15 @@ pub fn neg_mul_add<S: Simd, V: SimdFloat<S>>(_simd: S, x: V, y: V, z: V) -> V {
     (-x).mul_add_precise(y, z)
 }
 
+/// Square root, one correctly rounded instruction per lane.
+///
+/// SLEEF's `u05::sqrt` is a Newton refinement bounded at 0.5001 ULP; the hardware instruction is
+/// exactly rounded, so the `sqrt` slice entry takes this one instead.
+#[inline(always)]
+pub fn hw_sqrt<S: Simd, V: SimdFloat<S>>(_simd: S, x: V) -> V {
+    x.sqrt()
+}
+
 /// Estrin polynomial evaluation with scalar coefficients, degree 2.
 ///
 /// Every `polyN` takes the same `(simd, x, x2, x4 [, x8] [, x16], coefficients...)`

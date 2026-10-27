@@ -232,8 +232,6 @@ macro_rules! slice_api {
 pub mod $modname {
     //! Slice entry points for a scalar type.
 
-    #[cfg(feature = "simd")]
-    use super::scalar_apply;
     use super::LengthMismatch;
     #[cfg(not(feature = "simd"))]
     use super::{scalar_apply, scalar_apply2, scalar_apply_ff};
@@ -450,6 +448,7 @@ pub mod $modname {
             "Cosine, bitwise identical across lanes and platforms; 1.0 ULP.";
         tan_deterministic, xkernels::u10::tan_deterministic, <$ty>::tan,
             "Tangent, bitwise identical across lanes and platforms; 1.0 ULP.";
+        sqrt,       crate::common::hw_sqrt,    <$ty>::sqrt,    "Square root; 0.5 ULP.";
     }
 
 
@@ -476,16 +475,6 @@ pub mod $modname {
         tan_deterministic_u35, xkernels::u35::tan_deterministic, <$ty>::tan,
             "Tangent, lane-order independent, 3.5 ULP tier.";
     }
-
-    /// Square root; `0.5001 ULP`. Equivalent to the hardware square root.
-    #[inline]
-    pub fn sqrt(src: &[$ty], dst: &mut [MaybeUninit<$ty>]) -> Result<(), LengthMismatch> {
-        lengths(src.len(), dst.len())?;
-        scalar_apply(src, dst, <$ty>::sqrt);
-        Ok(())
-    }
-
-
 
     pair! {
         sincos, xkernels::u10::sincos, |v: $ty| (v.sin(), v.cos()),
