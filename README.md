@@ -81,6 +81,7 @@ from the same binary, and ★ marks the rows of `tensor4all/tenferro-rs#2033`.
 | `cos (u35)` | 8.66 | 1.88 | **4.61x** | 3.5 ULP |  |
 | `tanh (u35)` | 12.64 | 2.86 | **4.43x** | 3.5 ULP |  |
 | `tan (u35)` | 10.21 | 2.37 | **4.31x** | 3.5 ULP |  |
+| `sqrt` | 2.92 | 0.75 | **3.89x** | 0.5 ULP |  |
 | `sin` | 8.52 | 2.56 | **3.32x** | 1.0 ULP | ★ |
 | `cos` | 8.66 | 2.94 | **2.94x** | 1.0 ULP | ★ |
 | `log10` | 7.72 | 2.65 | **2.91x** | 1.0 ULP |  |
@@ -96,7 +97,6 @@ from the same binary, and ★ marks the rows of `tensor4all/tenferro-rs#2033`.
 | `exp` | 4.93 | 2.11 | **2.33x** | 1.0 ULP | ★ |
 | `cospi` | 9.12 | 4.29 | **2.13x** | 0.506 ULP |  |
 | `acos` | 6.56 | 3.17 | **2.07x** | 1.0 ULP |  |
-| `sqrt` | 2.46 | 1.19 | **2.07x** | 0.5001 ULP |  |
 | `sinpi` | 9.01 | 4.46 | **2.02x** | 0.506 ULP |  |
 | `exp2` | 3.31 | 1.78 | **1.86x** | 1.0 ULP |  |
 | `hypot` | 6.42 | 3.46 | **1.86x** | 0.5001 ULP |  |
@@ -120,6 +120,7 @@ from the same binary, and ★ marks the rows of `tensor4all/tenferro-rs#2033`.
 |---|---:|---:|---:|---:|
 | `tan (u35)` | 11.61 | 0.63 | **18.36x** | 3.5 ULP |
 | `tanh (u35)` | 13.84 | 0.91 | **15.28x** | 3.5 ULP |
+| `sqrt` | 2.65 | 0.25 | **10.57x** | 0.5 ULP |
 | `sinh` | 14.64 | 2.09 | **7.00x** | 1.0 ULP |
 | `sin (u35)` | 3.19 | 0.47 | **6.84x** | 3.5 ULP |
 | `asin` | 6.99 | 1.02 | **6.81x** | 1.0 ULP |
@@ -138,7 +139,6 @@ from the same binary, and ★ marks the rows of `tensor4all/tenferro-rs#2033`.
 | `sincos` | 6.16 | 1.44 | **4.28x** | 1.0 ULP |
 | `cosh` | 8.05 | 1.93 | **4.17x** | 1.0 ULP |
 | `atan` | 5.99 | 1.51 | **3.96x** | 1.0 ULP |
-| `sqrt` | 1.41 | 0.36 | **3.96x** | 0.5 ULP |
 | `atanh` | 7.82 | 2.13 | **3.67x** | 1.0001 ULP |
 | `tgamma` | 32.58 | 9.33 | **3.49x** | 1.0 ULP |
 | `asinh` | 12.00 | 3.95 | **3.04x** | 1.0001 ULP |

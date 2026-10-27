@@ -285,3 +285,23 @@ fused kernels bring tenferro to 44 / 65 us.
   bound. The MPFR suites in `tests/` assert the bounds in CI.
 - Throughput at 2^16 elements, one core: `f32` sigmoid 0.63 ns/elem, silu
   0.67, softplus 2.4, gelu 0.97, gelu_tanh 2.85; `f64` sigmoid 1.84, gelu 5.9.
+
+## `sqrt` gets a vector kernel (2026-10-27, issue #9)
+
+`sqrt` was the one slice entry that did not go through `dispatch!`: an unconditional
+`scalar_apply(src, dst, <$ty>::sqrt)`. It now uses `common::hw_sqrt`, one `sqrt` method on the
+vector type — the hardware instruction, one correctly rounded result per lane, so the slice path is
+bit-identical to the scalar `sqrt` and not merely inside a bound. `tests/ulp.rs` and
+`tests/ulp32.rs` pin `-0.0`, negatives, subnormals, `MIN_POSITIVE`, `MAX`, `±inf` and NaN beside the
+MPFR suite.
+
+SLEEF's `u05::sqrt` was not used for this: it is a Newton refinement bounded at 0.5001 ULP, and the
+issue's acceptance criterion is bit-identity with the scalar path. `f64x::u05::sqrt` and
+`f32x::u05::sqrt` stay where they are, used by `u35::sqrt` and the double-double kernels.
+
+Measured at the issue's size, `n = 33_554_432`, one thread pinned to CPU 2, destination buffer
+reused, best of 5 after 2 warmups, observer on CPUs 16-23: `f64` 40.15 ms / 1.1966 ns per element
+before, 21.35 ms / 0.6363 after (1.88x, against 22.9 ms for a bare `_mm256_sqrt_pd`); `f32` 12.35
+to 10.85 ms (1.14x, already memory bound). At the crate's `n = 2^23` protocol the paired speedup
+against libm went from 2.07x to 3.89x (`f64`) and from 3.96x to 10.57x (`f32`); the details and one
+discarded baseline outlier are in `docs/benchmark-results.md`.

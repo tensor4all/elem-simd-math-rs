@@ -25,6 +25,7 @@ and the binding accuracy gate is the MPFR suite in `tests/ulp.rs` / `tests/ulp32
 | `cos (u35)` | 8.662 | 1.879 | 4.61x | 2.4e-16 |
 | `tanh (u35)` | 12.642 | 2.856 | 4.43x | 6.5e-16 |
 | `tan (u35)` | 10.211 | 2.367 | 4.31x | 4.4e-16 |
+| `sqrt` † | 2.920 | 0.750 | 3.89x | 0.0e0 |
 | `sin` | 8.515 | 2.565 | 3.32x | 2.2e-16 |
 | `cos` | 8.664 | 2.945 | 2.94x | 2.2e-16 |
 | `log10` | 7.719 | 2.649 | 2.91x | 2.6e-16 |
@@ -40,7 +41,6 @@ and the binding accuracy gate is the MPFR suite in `tests/ulp.rs` / `tests/ulp32
 | `exp` | 4.926 | 2.112 | 2.33x | 2.2e-16 |
 | `cospi` | 9.117 | 4.285 | 2.13x | 1.0e0 |
 | `acos` | 6.558 | 3.174 | 2.07x | 2.2e-16 |
-| `sqrt` | 2.457 | 1.188 | 2.07x | 0.0e0 |
 | `sinpi` | 9.006 | 4.456 | 2.02x | 2.7e-10 |
 | `exp2` | 3.313 | 1.784 | 1.86x | 2.2e-16 |
 | `hypot` | 6.420 | 3.456 | 1.86x | 2.2e-16 |
@@ -64,6 +64,7 @@ and the binding accuracy gate is the MPFR suite in `tests/ulp.rs` / `tests/ulp32
 |---|---:|---:|---:|---:|
 | `tan (u35)` | 11.606 | 0.632 | 18.36x | 2.3e-7 |
 | `tanh (u35)` | 13.837 | 0.906 | 15.28x | 3.5e-7 |
+| `sqrt` † | 2.646 | 0.250 | 10.57x | 0.0e0 |
 | `sinh` | 14.640 | 2.092 | 7.00x | 1.6e-7 |
 | `sin (u35)` | 3.193 | 0.467 | 6.84x | 1.4e-7 |
 | `asin` | 6.986 | 1.025 | 6.81x | 1.2e-7 |
@@ -82,7 +83,6 @@ and the binding accuracy gate is the MPFR suite in `tests/ulp.rs` / `tests/ulp32
 | `sincos` | 6.164 | 1.440 | 4.28x | 0.0e0 |
 | `cosh` | 8.055 | 1.930 | 4.17x | 1.2e-7 |
 | `atan` | 5.985 | 1.512 | 3.96x | 1.2e-7 |
-| `sqrt` | 1.408 | 0.356 | 3.96x | 0.0e0 |
 | `atanh` | 7.821 | 2.128 | 3.67x | 2.0e-5 |
 | `tgamma` | 32.580 | 9.332 | 3.49x | 4.7e-7 |
 | `asinh` | 11.999 | 3.951 | 3.04x | 1.4e-7 |
@@ -108,14 +108,40 @@ and the binding accuracy gate is the MPFR suite in `tests/ulp.rs` / `tests/ulp32
 - `sinpi`/`cospi`'s scalar arm computes `sin(pi*x)` in double precision directly, which is *less*
   accurate than the kernel for large arguments; that column exists only to price the vector path.
   The large `rel` entries there are the scalar arm's error, not the kernel's.
-- `sqrt` has no vector kernel: the hardware square root is already vectorized by LLVM, so the row
-  shows what the scalar libm call costs on top of it.
+- `sqrt` is the hardware square root (`vsqrtpd` / `vsqrtps`), so its result is bit-identical to
+  the scalar `sqrt` rather than merely within a bound. It was the one entry without a vector
+  kernel until #9; `†` marks the rows re-measured in a later run than the rest, see below.
 - `pow` is the one operation the scalar library wins on `f64`; see `docs/findings-pow.md`. On `f32`
   SLEEF's `powf` is faster but its bound is 1.0 ULP against glibc's 0.504, so the trade-off runs the
   other way.
 - `tgamma`, `lgamma`, `erfc`, `asinh` and `acosh` are the double-double-heavy kernels: they win on
   accuracy by a wide margin (see `docs/findings-tgamma.md`) but their cost is set by the polynomial
   degree, not by the lane count, so the speedup there is the smallest.
+
+### `sqrt` takes the hardware kernel (issue #9)
+
+`sqrt` was the one slice entry that did not go through `dispatch!`: it was `scalar_apply` over the
+platform's `f64::sqrt` / `f32::sqrt`. It now uses `common::hw_sqrt`, one correctly rounded hardware
+instruction per lane, so it is bit-identical to the scalar `sqrt` — `-0.0`, negatives, subnormals,
+`MIN_POSITIVE`, `MAX`, `±inf` and NaN are pinned in `tests/ulp.rs` / `tests/ulp32.rs`. SLEEF's
+`u05::sqrt` (0.5001 ULP Newton refinement) is deliberately not used here.
+
+At the issue's size, `n = 33_554_432`, one thread on `taskset -c 2`, destination buffer reused, best
+of 5 rounds after 2 warmups, on the host above and with the observer on CPUs 16-23 (outside the
+measured 0-7 L3 domain):
+
+| path | `f64` ms | `f64` ns/elem | `f32` ms | `f32` ns/elem |
+|---|---:|---:|---:|---:|
+| `scalar_apply` (before) | 40.15 | 1.1966 | 12.35 | 0.3680 |
+| `hw_sqrt` (after) | 21.35 | 0.6363 | 10.85 | 0.3234 |
+| ratio | 1.88x | | 1.14x | |
+
+`f64` clears the issue's 1.5x target on three consecutive runs (21.35-21.74 ms against the issue's
+own 41-43 ms, and 22.9 ms for a bare `_mm256_sqrt_pd`). `f32` gains only 1.14x (10.85-11.27 ms)
+because it was already near the memory bound at about 25 GB/s. One baseline run measured 83.26 ms for `f64`, 2.07x
+the median, with the measured L3 domain otherwise idle; it is kept here as a discarded attempt
+rather than folded into the numbers. The `†` rows above come from the run of this section; every
+other row, and the raw output below, is the original pre-kernel run.
 
 ## Raw output
 
