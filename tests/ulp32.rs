@@ -10,7 +10,7 @@ mod common;
 
 use core::mem::MaybeUninit;
 
-use common::{check_binary, check_pair, check_unary, read, LENS, PREC};
+use common::{assert_close, check_binary, check_pair, check_unary, read, LENS, PREC};
 use elem_simd_math::{f32 as ops, ElementwiseMath, LengthMismatch};
 use rug::ops::Pow;
 use rug::Float;
@@ -89,6 +89,26 @@ fn log10_ulp() {
 #[test]
 fn log1p_ulp() {
     check_unary("log1p", ops::log1p, Float::ln_1p, -1.0, 1e38, 1.0);
+}
+
+/// `log1p` is finite at the top of the range: `d + 1` overflows there, but the logarithm does not.
+/// The uniform sampler never lands on `f32::MAX`, so the tail is checked explicitly.
+#[test]
+fn log1p_large_arguments() {
+    let src = [1e38, f32::MAX, f32::INFINITY];
+    let mut out: Vec<MaybeUninit<f32>> = vec![MaybeUninit::uninit(); src.len()];
+    ops::log1p(&src, &mut out).expect("length check");
+    for (lane, (got, &x)) in read(out).iter().zip(src.iter()).enumerate() {
+        assert_close(
+            "log1p large",
+            0,
+            lane,
+            x,
+            *got,
+            &Float::with_val(PREC, x).ln_1p(),
+            1.0,
+        );
+    }
 }
 
 #[test]

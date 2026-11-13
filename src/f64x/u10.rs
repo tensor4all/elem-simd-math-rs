@@ -1711,9 +1711,10 @@ pub fn log1p<S: Simd>(simd: S, d: F64s<S>) -> F64s<S> {
 
     let mut r = s.0 + s.1;
 
-    r = d
-        .simd_gt(splat(simd, 1e+307))
-        .select(splat(simd, f64::INFINITY), r);
+    // `d + 1` overflows to infinity above this point, so the reduction above cannot run; the
+    // logarithm itself is still finite. `log(1 + d)` and `log(d)` differ by less than `1e-307`
+    // there, far below one ULP, so the `log` kernel is exact enough for this tail.
+    r = d.simd_gt(splat(simd, 1e+307)).select(log(simd, d), r);
     r = (d.simd_lt(splat(simd, -1.)) | d.is_nan()).select(splat(simd, f64::NAN), r);
     r = d
         .simd_eq(splat(simd, -1.))

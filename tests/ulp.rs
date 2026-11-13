@@ -77,6 +77,26 @@ fn log1p_ulp() {
     check_unary("log1p", ops::log1p, Float::ln_1p, -1.0, 1e307, 1.0);
 }
 
+/// `log1p` is finite at the top of the range: `d + 1` overflows there, but the logarithm does not.
+/// The uniform sampler never lands on `f64::MAX`, so the tail is checked explicitly.
+#[test]
+fn log1p_large_arguments() {
+    let src = [1e307, 1e308, f64::MAX, f64::INFINITY];
+    let mut out: Vec<MaybeUninit<f64>> = vec![MaybeUninit::uninit(); src.len()];
+    ops::log1p(&src, &mut out).expect("length check");
+    for (lane, (got, &x)) in read(out).iter().zip(src.iter()).enumerate() {
+        assert_close(
+            "log1p large",
+            0,
+            lane,
+            x,
+            *got,
+            &Float::with_val(PREC, x).ln_1p(),
+            1.0,
+        );
+    }
+}
+
 #[test]
 fn sin_ulp() {
     check_unary("sin", ops::sin, Float::sin, f64::MIN, f64::MAX, 1.0);
